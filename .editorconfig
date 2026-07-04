@@ -1,0 +1,15 @@
+root = true
+
+# Decompiled source uses 2-space indentation — match it so IDE0055 doesn't fire
+[*.cs]
+indent_style = space
+indent_size = 2
+tab_width = 2
+end_of_line = crlf
+charset = utf-8-bom
+dotnet_diagnostic.IDE0055.severity = none
+
+# Generated stubs can use standard 4-space indentation
+[Stubs/**.cs]
+indent_size = 4
+tab_width = 4

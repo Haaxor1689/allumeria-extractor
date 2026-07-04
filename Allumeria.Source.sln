@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Allumeria.Source", "Allumeria.Source.csproj", "{24F2980F-DD9B-4C95-AA7E-63C999445FF2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WikiExporter", "WikiExporter\WikiExporter.csproj", "{03D6CB0B-7365-46AB-B53B-EE992F2C6FB4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{24F2980F-DD9B-4C95-AA7E-63C999445FF2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{24F2980F-DD9B-4C95-AA7E-63C999445FF2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{24F2980F-DD9B-4C95-AA7E-63C999445FF2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{24F2980F-DD9B-4C95-AA7E-63C999445FF2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{03D6CB0B-7365-46AB-B53B-EE992F2C6FB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03D6CB0B-7365-46AB-B53B-EE992F2C6FB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03D6CB0B-7365-46AB-B53B-EE992F2C6FB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03D6CB0B-7365-46AB-B53B-EE992F2C6FB4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

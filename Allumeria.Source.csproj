@@ -1,0 +1,191 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Allumeria</AssemblyName>
+    <RootNamespace>Allumeria</RootNamespace>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <AnalysisLevel>none</AnalysisLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Allumeria\**\*.cs" Exclude="Allumeria\bin\**;Allumeria\obj\**" />
+    <Compile Include="Stubs\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Facepunch.Steamworks.Win64">
+      <HintPath>Allumeria\lib\Facepunch.Steamworks.Win64.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FastNoise">
+      <HintPath>Allumeria\lib\FastNoise.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.Data.Sqlite">
+      <HintPath>Allumeria\lib\Microsoft.Data.Sqlite.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OpenTK.Audio.OpenAL">
+      <HintPath>Allumeria\lib\OpenTK.Audio.OpenAL.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OpenTK.Graphics">
+      <HintPath>Allumeria\lib\OpenTK.Graphics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OpenTK.Mathematics">
+      <HintPath>Allumeria\lib\OpenTK.Mathematics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Common">
+      <HintPath>Allumeria\lib\OpenTK.Windowing.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Desktop">
+      <HintPath>Allumeria\lib\OpenTK.Windowing.Desktop.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework">
+      <HintPath>Allumeria\lib\OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- SoLoudLib was built for .NET 9+; replaced by Stubs\SoLoudStub.cs for navigation -->
+    <!-- <Reference Include="SoLoudLib"><HintPath>Allumeria\lib\SoLoudLib.dll</HintPath></Reference> -->
+    <Reference Include="StbImageSharp">
+      <HintPath>Allumeria\lib\StbImageSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="StbImageWriteSharp">
+      <HintPath>Allumeria\lib\StbImageWriteSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Collections">
+      <HintPath>Allumeria\lib\System.Collections.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Collections.Concurrent">
+      <HintPath>Allumeria\lib\System.Collections.Concurrent.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.ComponentModel.Primitives">
+      <HintPath>Allumeria\lib\System.ComponentModel.Primitives.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Console">
+      <HintPath>Allumeria\lib\System.Console.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Data.Common">
+      <HintPath>Allumeria\lib\System.Data.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Diagnostics.Process">
+      <HintPath>Allumeria\lib\System.Diagnostics.Process.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Drawing.Primitives">
+      <HintPath>Allumeria\lib\System.Drawing.Primitives.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.IO.Compression">
+      <HintPath>Allumeria\lib\System.IO.Compression.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Linq">
+      <HintPath>Allumeria\lib\System.Linq.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>Allumeria\lib\System.Memory.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Net.Primitives">
+      <HintPath>Allumeria\lib\System.Net.Primitives.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Net.Sockets">
+      <HintPath>Allumeria\lib\System.Net.Sockets.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>Allumeria\lib\System.Numerics.Vectors.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Reflection.Metadata">
+      <HintPath>Allumeria\lib\System.Reflection.Metadata.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Runtime">
+      <HintPath>Allumeria\lib\System.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Runtime.InteropServices">
+      <HintPath>Allumeria\lib\System.Runtime.InteropServices.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Runtime.InteropServices.JavaScript">
+      <HintPath>Allumeria\lib\System.Runtime.InteropServices.JavaScript.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Text.Json">
+      <HintPath>Allumeria\lib\System.Text.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Text.RegularExpressions">
+      <HintPath>Allumeria\lib\System.Text.RegularExpressions.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Threading">
+      <HintPath>Allumeria\lib\System.Threading.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Parallel">
+      <HintPath>Allumeria\lib\System.Threading.Tasks.Parallel.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Threading.Thread">
+      <HintPath>Allumeria\lib\System.Threading.Thread.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Threading.ThreadPool">
+      <HintPath>Allumeria\lib\System.Threading.ThreadPool.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Suppress the lib\System.*.dll copies so the SDK's own runtime assemblies win -->
+  <ItemGroup>
+    <Reference Remove="System.Collections" />
+    <Reference Remove="System.Collections.Concurrent" />
+    <Reference Remove="System.ComponentModel.Primitives" />
+    <Reference Remove="System.Console" />
+    <Reference Remove="System.Data.Common" />
+    <Reference Remove="System.Diagnostics.Process" />
+    <Reference Remove="System.Drawing.Primitives" />
+    <Reference Remove="System.IO.Compression" />
+    <Reference Remove="System.Linq" />
+    <Reference Remove="System.Memory" />
+    <Reference Remove="System.Net.Primitives" />
+    <Reference Remove="System.Net.Sockets" />
+    <Reference Remove="System.Numerics.Vectors" />
+    <Reference Remove="System.Reflection.Metadata" />
+    <Reference Remove="System.Runtime" />
+    <Reference Remove="System.Runtime.InteropServices" />
+    <Reference Remove="System.Runtime.InteropServices.JavaScript" />
+    <Reference Remove="System.Text.Json" />
+    <Reference Remove="System.Text.RegularExpressions" />
+    <Reference Remove="System.Threading" />
+    <Reference Remove="System.Threading.Tasks.Parallel" />
+    <Reference Remove="System.Threading.Thread" />
+    <Reference Remove="System.Threading.ThreadPool" />
+  </ItemGroup>
+
+</Project>
+

@@ -1,0 +1,42 @@
+Allumeria/
+export/
+
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# User-specific files
+*.user
+*.rsuser
+*.suo
+*.userprefs
+
+# Visual Studio
+.vs/
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# VS Code workspace settings (optional; remove if you want to share)
+.vscode/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+!packages/build/
+
+# Test / coverage output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Logs
+*.log
+
+# OS-generated files
+.DS_Store
+Thumbs.db
