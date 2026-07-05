@@ -1,22 +1,62 @@
-# Exporter
+# Allumeria Exporter
 
-`Exporter` is a .NET CLI tool that parses Allumeria source files and exports JSON datasets.
+Allumeria Exporter is a .NET CLI tool that parses decompiled Allumeria source code and game assets, then writes structured JSON and WEBP assets for downstream use.
+
+You can find the game on [Steam](https://store.steampowered.com/app/3516590/Allumeria/) or check out [the official website](https://allumeria.com/) for more links.
+
+## Prerequisites
+
+- .NET 8 SDK
+- Access to the Allumeria game assets directory
+- Decompiled Allumeria source in this repository under `Allumeria/`
 
 ## Prepare source before export
 
-Before running the exporter project, you must decompile and normalize the source tree.
+Before running the exporter, decompile and normalize the source tree.
 
 1. Open the original `Allumeria.dll` assembly in dotPeek.
-2. Export/decompile the project into this repository's `Allumeria` folder so source files exist under `./Allumeria`.
-3. From the repository root, run the fix script:
+2. Export/decompile into this repository's `Allumeria/` folder.
+3. From the repository root, run:
 
 ```powershell
 .\Fix-AllumeriaSource.ps1
 ```
 
-The exporter expects this fixed decompiled layout. If you skip these steps, export parsing may fail or produce incomplete JSON.
+If these steps are skipped, parsers may fail or produce incomplete output.
 
-## Exported datasets
+## Run the exporter
+
+Run from the repository root:
+
+```powershell
+dotnet run --project Exporter
+```
+
+Do not run the full solution build. Use the exporter project command above.
+
+## CLI arguments
+
+- `--source`, `-s`
+	- Path to the Allumeria source root folder.
+	- Default: `<current working directory>/Allumeria`
+- `--output`, `-o`
+	- Output directory for generated files.
+	- Default: `<current working directory>/export`
+- `--assets`, `-a`
+	- Path to Allumeria assets root.
+	- Default: `C:\Program Files (x86)\Steam\steamapps\common\Allumeria Demo\res`
+
+Example:
+
+```powershell
+dotnet run --project Exporter -- --source .\Allumeria --output .\export --assets "C:\Program Files (x86)\Steam\steamapps\common\Allumeria Demo\res"
+```
+
+## Outputs
+
+The exporter writes files under the selected output directory.
+
+Data files (in `output/data/`):
 
 - `items.json`
 - `recipes.json`
@@ -24,19 +64,12 @@ The exporter expects this fixed decompiled layout. If you skip these steps, expo
 - `creatures.json`
 - `loot.json`
 - `spawn.json`
+- `effects.json`
+- `translations.json`
 - `summary.json`
 
-## Usage
+Texture assets:
 
-From the repository root:
-
-```powershell
-dotnet run --project Exporter
-```
-
-Arguments:
-
-- `--source` or `-s`: path to the Allumeria source root folder. Defaults to `Allumeria` relative to the repository root.
-- `--output` or `-o`: output directory for generated JSON files. Defaults to `export` in the current working directory.
-- `--assets` or `-a`: path to the Allumeria assets folder inside Steam. Defaults to `{path_to_steamapps_common}/Allumeria Demo/res`.
-
+- `output/assets/items/` (converted item textures, WEBP)
+- `output/assets/blocks/` (converted block textures, WEBP)
+- `output/assets/ui/` (UI atlas slices, WEBP)
