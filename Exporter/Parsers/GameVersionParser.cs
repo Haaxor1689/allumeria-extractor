@@ -8,10 +8,10 @@ internal static class GameVersionParser
     if (!File.Exists(path))
       return null;
 
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var values = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
       foreach (var variable in field.Declaration.Variables)
       {

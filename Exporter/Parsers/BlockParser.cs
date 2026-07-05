@@ -10,12 +10,13 @@ internal static class BlockParser
     if (!File.Exists(path))
       return [];
 
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var list = new List<object>();
+    var blockEntriesById = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
     var defaultCraftingTypesByType = BuildDefaultCraftingTypeMap(sourceRoot);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
       foreach (var variable in field.Declaration.Variables)
       {
@@ -23,64 +24,64 @@ internal static class BlockParser
         if (initializer is null)
           continue;
 
-        var ctor = SyntaxParsingHelpers.TryGetRootObjectCreation(initializer);
+        var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(initializer);
         if (ctor is null || !ctor.Type.ToString().StartsWith("Block", StringComparison.Ordinal))
           continue;
 
-        var invocations = SyntaxParsingHelpers.FindInvocations(initializer).ToArray();
+        var invocations = SyntaxParsingUtils.FindInvocations(initializer).ToArray();
         var symbol = variable.Identifier.Text;
-        var id = SyntaxParsingHelpers.TryReadIdFromObjectCreation(ctor) ?? symbol;
+        var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? symbol;
         var constructorType = ctor.Type.ToString();
         var typeName = NormalizeTypeName(constructorType);
 
         var textureInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetTexture"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetTexture"
         );
         var texturesInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetTextures"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetTextures"
         );
         var paintedTexturesInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetPaintedTextures"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetPaintedTextures"
         );
         var itemSpriteInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetItemSprite"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetItemSprite"
         );
         var blockModelInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetBlockModel"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetBlockModel"
         );
         var setLightEmissionInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetLightEmission"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetLightEmission"
         );
         var setSpawnEntryInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetSpawnEntry"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetSpawnEntry"
         );
         var setStandOnEffectInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetStandOnEffect"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetStandOnEffect"
         );
         var setCraftingTypeInvocation = invocations.LastOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetCraftingType"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetCraftingType"
         );
 
         var material = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SetMaterial")
-          .Select(inv => SyntaxParsingHelpers.TryReadQualifiedMemberArg(inv, 0, "BlockMaterial"))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SetMaterial")
+          .Select(inv => SyntaxParsingUtils.TryReadQualifiedMemberArg(inv, 0, "BlockMaterial"))
           .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
         var spawnDefinition = setSpawnEntryInvocation is null
           ? null
-          : SyntaxParsingHelpers.TryReadQualifiedMemberArg(setSpawnEntryInvocation, 0, "SpawnDefinition");
+          : SyntaxParsingUtils.TryReadQualifiedMemberArg(setSpawnEntryInvocation, 0, "SpawnDefinition");
 
         var spawnRate = setSpawnEntryInvocation is null
           ? null
-          : SyntaxParsingHelpers.TryReadIntArg(setSpawnEntryInvocation, 1);
+          : SyntaxParsingUtils.TryReadIntArg(setSpawnEntryInvocation, 1);
 
         var sellValue = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SellValue")
-          .Select(inv => SyntaxParsingHelpers.TryReadIntArg(inv, 0))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SellValue")
+          .Select(inv => SyntaxParsingUtils.TryReadIntArg(inv, 0))
           .FirstOrDefault(value => value.HasValue);
 
         var category = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SetCategory")
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SetCategory")
           .Select(inv => TryReadCategoryNames(inv, 0))
           .FirstOrDefault(values => values.Count > 0);
 
@@ -97,7 +98,7 @@ internal static class BlockParser
         var standOnEffect = TryReadExpressionArg(setStandOnEffectInvocation, 0) as string;
         var craftingType = setCraftingTypeInvocation is null
           ? null
-          : SyntaxParsingHelpers.TryReadQualifiedMemberArg(setCraftingTypeInvocation, 0, "CraftingStation");
+          : SyntaxParsingUtils.TryReadQualifiedMemberArg(setCraftingTypeInvocation, 0, "CraftingStation");
 
         if (string.IsNullOrWhiteSpace(craftingType))
         {
@@ -107,19 +108,19 @@ internal static class BlockParser
         }
 
         var decorationScore = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SetDecorationScore")
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SetDecorationScore")
           .Select(inv => TryReadExpressionArg(inv, 0))
           .FirstOrDefault(value => value is float or double or decimal);
 
         var lightEmission = TryReadIntTriple(setLightEmissionInvocation, 0, 1, 2);
 
-        var hidden = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "Hide");
-        var solid = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "MakeSolid");
-        var semiSolid = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "MakeSemiSolid");
-        var transparent = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "MakeTransparent");
-        var interactible = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "MakeInteractible");
-        var needSupport = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "MakeNeedSupport");
-        var canBeShaped = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "AutoGenVariants");
+        var hidden = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "Hide");
+        var solid = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeSolid");
+        var semiSolid = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeSemiSolid");
+        var transparent = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeTransparent");
+        var interactible = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeInteractible");
+        var needSupport = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeNeedSupport");
+        var canBeShaped = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "AutoGenVariants");
 
         var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
 
@@ -186,10 +187,317 @@ internal static class BlockParser
         AddExtraConstructorFields(entry, ctor, constructorType, typeName, constructorParamsByType);
 
         list.Add(entry);
+        if (!string.IsNullOrWhiteSpace(id))
+          blockEntriesById[id] = entry;
       }
     }
 
+    ApplyProjectWideBlockAssignments(sourceRoot, blockEntriesById);
+
     return list;
+  }
+
+  private static void ApplyProjectWideBlockAssignments(
+    string sourceRoot,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    foreach (var file in SyntaxParsingUtils.EnumerateSourceFiles(sourceRoot))
+    {
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
+
+      foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+      {
+        var invocationName = SyntaxParsingUtils.GetInvocationName(invocation);
+
+        switch (invocationName)
+        {
+          case "SetLoot":
+            ApplySetLootInvocation(invocation, blockEntriesById);
+            break;
+          case "SetDropItem":
+            ApplySetDropItemInvocation(invocation, blockEntriesById);
+            break;
+          case "OverwriteItem":
+            ApplyOverwriteItemInvocation(invocation, blockEntriesById);
+            break;
+          case "SetRarity":
+            ApplySetRarityInvocation(invocation, blockEntriesById);
+            break;
+          case "TargetLiquid":
+            ApplyTargetLiquidInvocation(invocation, blockEntriesById);
+            break;
+        }
+      }
+
+      foreach (var assignment in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+      {
+        ApplyBlockAssignment(assignment, blockEntriesById);
+      }
+    }
+  }
+
+  private static void ApplySetLootInvocation(
+    InvocationExpressionSyntax invocation,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    if (!TryReadBlockTargetId(invocation, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+    var lootId = TryReadLootDescriptionReference(argument);
+    if (string.IsNullOrWhiteSpace(lootId))
+      return;
+
+    blockEntry["loot"] = lootId;
+  }
+
+  private static void ApplySetDropItemInvocation(
+    InvocationExpressionSyntax invocation,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    if (!TryReadBlockTargetId(invocation, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+    var dropItem = NormalizeEntityExpression(argument?.ToString());
+    if (string.IsNullOrWhiteSpace(dropItem))
+      return;
+
+    blockEntry["dropItem"] = dropItem;
+  }
+
+  private static void ApplyOverwriteItemInvocation(
+    InvocationExpressionSyntax invocation,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    if (!TryReadBlockTargetId(invocation, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+    var itemId = NormalizeEntityExpression(argument?.ToString());
+    if (string.IsNullOrWhiteSpace(itemId))
+      return;
+
+    blockEntry["item"] = itemId;
+  }
+
+  private static void ApplySetRarityInvocation(
+    InvocationExpressionSyntax invocation,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    if (!TryReadBlockItemTargetId(invocation, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    var rarity = SyntaxParsingUtils.TryReadIntArg(invocation, 0);
+    if (rarity.HasValue)
+      blockEntry["rarity"] = rarity.Value;
+  }
+
+  private static void ApplyTargetLiquidInvocation(
+    InvocationExpressionSyntax invocation,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    if (!TryReadBlockItemTargetId(invocation, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    blockEntry["targetLiquid"] = true;
+  }
+
+  private static void ApplyBlockAssignment(
+    AssignmentExpressionSyntax assignment,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+  )
+  {
+    var left = Unwrap(assignment.Left);
+    if (left is not MemberAccessExpressionSyntax memberAccess)
+      return;
+
+    if (!TryReadBlockIdFromExpression(memberAccess.Expression, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    var fieldName = memberAccess.Name.Identifier.Text;
+    switch (fieldName)
+    {
+      case "canBeFelled":
+        if (TryReadBoolLiteral(assignment.Right) is bool canBeFelled)
+          blockEntry["canBeFelled"] = canBeFelled;
+        break;
+      case "harvestLoot":
+        var harvestLoot = TryReadLootDescriptionReference(assignment.Right);
+        if (!string.IsNullOrWhiteSpace(harvestLoot))
+          blockEntry["harvestLoot"] = harvestLoot;
+        break;
+    }
+  }
+
+  private static bool TryGetBlockEntry(
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    string? blockId,
+    out Dictionary<string, object?> entry
+  )
+  {
+    if (!string.IsNullOrWhiteSpace(blockId) && blockEntriesById.TryGetValue(blockId, out var found))
+    {
+      entry = found;
+      return true;
+    }
+
+    entry = null!;
+    return false;
+  }
+
+  private static bool TryReadBlockTargetId(InvocationExpressionSyntax invocation, out string? blockId)
+  {
+    blockId = null;
+
+    if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+      return false;
+
+    return TryReadBlockIdFromExpression(memberAccess.Expression, out blockId);
+  }
+
+  private static bool TryReadBlockItemTargetId(InvocationExpressionSyntax invocation, out string? blockId)
+  {
+    blockId = null;
+
+    if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+      return false;
+
+    return TryReadBlockItemIdFromExpression(memberAccess.Expression, out blockId);
+  }
+
+  private static bool TryReadBlockIdFromExpression(ExpressionSyntax expression, out string? blockId)
+  {
+    blockId = null;
+
+    var reduced = Unwrap(expression);
+    if (
+      reduced is MemberAccessExpressionSyntax memberAccess
+      && memberAccess.Expression is IdentifierNameSyntax owner
+      && owner.Identifier.Text == "Block"
+    )
+    {
+      blockId = memberAccess.Name.Identifier.Text;
+      return true;
+    }
+
+    return false;
+  }
+
+  private static bool TryReadBlockItemIdFromExpression(ExpressionSyntax expression, out string? blockId)
+  {
+    blockId = null;
+
+    var reduced = Unwrap(expression);
+    if (reduced is not MemberAccessExpressionSyntax memberAccess || memberAccess.Name.Identifier.Text != "item")
+      return false;
+
+    return TryReadBlockIdFromExpression(memberAccess.Expression, out blockId);
+  }
+
+  private static bool? TryReadBoolLiteral(ExpressionSyntax expression)
+  {
+    var reduced = Unwrap(expression);
+    return reduced switch
+    {
+      LiteralExpressionSyntax literal when literal.Token.Value is bool value => value,
+      _ => null,
+    };
+  }
+
+  private static string? TryReadLootDescriptionReference(ExpressionSyntax? expression)
+  {
+    if (expression is null)
+      return null;
+
+    var reduced = Unwrap(expression);
+
+    if (
+      reduced is MemberAccessExpressionSyntax memberAccess
+      && memberAccess.Expression is IdentifierNameSyntax owner
+      && owner.Identifier.Text == "LootDescription"
+    )
+    {
+      return memberAccess.Name.Identifier.Text;
+    }
+
+    var creation = SyntaxParsingUtils.TryGetRootObjectCreation(reduced);
+    if (creation is not null && NormalizeTypeName(creation.Type.ToString()) == "LootDescription")
+      return SyntaxParsingUtils.TryReadIdFromObjectCreation(creation);
+
+    return null;
+  }
+
+  private static string? NormalizeEntityExpression(string? expression)
+  {
+    if (string.IsNullOrWhiteSpace(expression))
+      return null;
+
+    var text = expression.Trim();
+
+    while (text.StartsWith("(", StringComparison.Ordinal) && text.Contains(')'))
+    {
+      var closeIndex = text.IndexOf(')');
+      if (closeIndex <= 0)
+        break;
+      text = text[(closeIndex + 1)..].TrimStart();
+    }
+
+    if (text.StartsWith("Item.", StringComparison.Ordinal) && text.Length > "Item.".Length)
+      return text["Item.".Length..];
+
+    if (
+      text.StartsWith("Block.", StringComparison.Ordinal)
+      && text.EndsWith(".item", StringComparison.Ordinal)
+      && text.Length > "Block..item".Length
+    )
+      return text["Block.".Length..^".item".Length];
+
+    return text;
+  }
+
+  private static ExpressionSyntax Unwrap(ExpressionSyntax expression)
+  {
+    var cursor = expression;
+
+    while (true)
+    {
+      switch (cursor)
+      {
+        case ParenthesizedExpressionSyntax parenthesized:
+          cursor = parenthesized.Expression;
+          continue;
+        case CastExpressionSyntax cast:
+          cursor = cast.Expression;
+          continue;
+        default:
+          return cursor;
+      }
+    }
   }
 
   private static void AddExtraConstructorFields(
@@ -276,7 +584,7 @@ internal static class BlockParser
 
     foreach (var file in Directory.EnumerateFiles(blockTypesRoot, "*.cs", SearchOption.TopDirectoryOnly))
     {
-      var root = SyntaxParsingHelpers.ParseCompilationUnit(file);
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
       var constructors = root.DescendantNodes().OfType<ConstructorDeclarationSyntax>();
 
       foreach (var constructor in constructors)
@@ -308,7 +616,7 @@ internal static class BlockParser
 
     foreach (var file in Directory.EnumerateFiles(blockTypesRoot, "*.cs", SearchOption.TopDirectoryOnly))
     {
-      var root = SyntaxParsingHelpers.ParseCompilationUnit(file);
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
 
       foreach (var declaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
       {
@@ -537,7 +845,7 @@ internal static class BlockParser
     return cursor switch
     {
       LiteralExpressionSyntax literal when literal.Token.Value is not null => literal.Token.Value,
-      InvocationExpressionSyntax invocation when SyntaxParsingHelpers.GetInvocationName(invocation) == "nameof" =>
+      InvocationExpressionSyntax invocation when SyntaxParsingUtils.GetInvocationName(invocation) == "nameof" =>
         invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression switch
         {
           IdentifierNameSyntax identifier => identifier.Identifier.Text,

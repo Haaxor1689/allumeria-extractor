@@ -8,11 +8,11 @@ internal static class EffectParser
     if (!File.Exists(path))
       return [];
 
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var list = new List<object>();
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
       foreach (var variable in field.Declaration.Variables)
       {
@@ -20,7 +20,7 @@ internal static class EffectParser
         if (initializer is null)
           continue;
 
-        var ctor = SyntaxParsingHelpers.TryGetRootObjectCreation(initializer);
+        var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(initializer);
         if (ctor is null)
           continue;
 
@@ -149,7 +149,7 @@ internal static class EffectParser
 
     foreach (var file in Directory.EnumerateFiles(effectsRoot, "*.cs", SearchOption.TopDirectoryOnly))
     {
-      var root = SyntaxParsingHelpers.ParseCompilationUnit(file);
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
       var constructors = root.DescendantNodes().OfType<ConstructorDeclarationSyntax>();
 
       foreach (var constructor in constructors)
@@ -255,7 +255,7 @@ internal static class EffectParser
     return reduced switch
     {
       LiteralExpressionSyntax literal when literal.Token.Value is not null => literal.Token.Value,
-      InvocationExpressionSyntax invocation when SyntaxParsingHelpers.GetInvocationName(invocation) == "nameof" =>
+      InvocationExpressionSyntax invocation when SyntaxParsingUtils.GetInvocationName(invocation) == "nameof" =>
         invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression switch
         {
           IdentifierNameSyntax identifier => identifier.Identifier.Text,

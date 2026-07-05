@@ -2,8 +2,24 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-internal static class SyntaxParsingHelpers
+internal static class SyntaxParsingUtils
 {
+  public static IEnumerable<string> EnumerateSourceFiles(string sourceRoot)
+  {
+    if (!Directory.Exists(sourceRoot))
+      return Enumerable.Empty<string>();
+
+    var separator = Path.DirectorySeparatorChar;
+    var binSegment = $"{separator}bin{separator}";
+    var objSegment = $"{separator}obj{separator}";
+
+    return Directory
+      .EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+      .Where(path => !path.Contains(binSegment, StringComparison.OrdinalIgnoreCase))
+      .Where(path => !path.Contains(objSegment, StringComparison.OrdinalIgnoreCase))
+      .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+  }
+
   public static CompilationUnitSyntax ParseCompilationUnit(string path)
   {
     var text = File.ReadAllText(path);
@@ -152,4 +168,3 @@ internal static class SyntaxParsingHelpers
     return hasPublic && hasStatic;
   }
 }
-

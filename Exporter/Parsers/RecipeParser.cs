@@ -4,54 +4,43 @@ internal static class RecipeParser
 {
   public static List<object> Parse(string sourceRoot)
   {
-    var path = Path.Combine(sourceRoot, "Items", "Crafting", "CraftingRecipe.cs");
-    if (!File.Exists(path))
-      return [];
-
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
     var list = new List<object>();
+    var seenLocations = new HashSet<string>(StringComparer.Ordinal);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var file in SyntaxParsingUtils.EnumerateSourceFiles(sourceRoot))
     {
-      foreach (var variable in field.Declaration.Variables)
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
+
+      foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
       {
-        var expression = variable.Initializer?.Value;
-        if (expression is null || !ContainsCraftingRecipeCreation(expression))
+        if (!IsCraftingRecipeType(creation.Type.ToString()))
           continue;
 
-        list.Add(ParseRecipeExpression(expression));
+        var key = $"{file}:{creation.SpanStart}:{creation.Span.Length}";
+        if (!seenLocations.Add(key))
+          continue;
+
+        var expression = GetOutermostChainedExpression(creation);
+        var parsed = ParseRecipeExpression(expression);
+
+        if (parsed.TryGetValue("result", out var result) && result is not null)
+          list.Add(parsed);
       }
-    }
-
-    foreach (
-      var statement in root.DescendantNodes()
-        .OfType<MethodDeclarationSyntax>()
-        .Where(method => method.Identifier.Text == "InitCraftingRecipes")
-        .SelectMany(method =>
-          method.Body?.Statements.OfType<ExpressionStatementSyntax>() ?? Enumerable.Empty<ExpressionStatementSyntax>()
-        )
-    )
-    {
-      var expression = statement.Expression;
-      if (!ContainsCraftingRecipeCreation(expression))
-        continue;
-
-      list.Add(ParseRecipeExpression(expression));
     }
 
     return list;
   }
 
-  private static object ParseRecipeExpression(ExpressionSyntax expression)
+  private static Dictionary<string, object?> ParseRecipeExpression(ExpressionSyntax expression)
   {
-    var invocations = SyntaxParsingHelpers.FindInvocations(expression).ToArray();
+    var invocations = SyntaxParsingUtils.FindInvocations(expression).ToArray();
     var recipeCreation = expression
       .DescendantNodesAndSelf()
       .OfType<ObjectCreationExpressionSyntax>()
       .FirstOrDefault(node => node.Type.ToString().EndsWith("CraftingRecipe", StringComparison.Ordinal));
 
     var itemStackCreation = recipeCreation
-      ?.ArgumentList?.Arguments.Select(argument => SyntaxParsingHelpers.TryGetRootObjectCreation(argument.Expression))
+      ?.ArgumentList?.Arguments.Select(argument => SyntaxParsingUtils.TryGetRootObjectCreation(argument.Expression))
       .FirstOrDefault(creation =>
         creation is not null && creation.Type.ToString().EndsWith("ItemStack", StringComparison.Ordinal)
       );
@@ -65,17 +54,17 @@ internal static class RecipeParser
 
     var resultAmount =
       itemStackCreation?.ArgumentList?.Arguments.Count > 1
-        ? SyntaxParsingHelpers.TryParseInt(itemStackCreation.ArgumentList.Arguments[1].Expression)
+        ? SyntaxParsingUtils.TryParseInt(itemStackCreation.ArgumentList.Arguments[1].Expression)
         : null;
 
     var station = recipeCreation
       ?.ArgumentList?.Arguments.Select(argument =>
-        SyntaxParsingHelpers.TryReadMemberName(argument.Expression, "CraftingStation")
+        SyntaxParsingUtils.TryReadMemberName(argument.Expression, "CraftingStation")
       )
       .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     var requirements = invocations
-      .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "AddReq")
+      .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "AddReq")
       .Select(TryReadRequirement)
       .Where(req => req.HasValue)
       .Select(req => req!.Value)
@@ -111,12 +100,26 @@ internal static class RecipeParser
     return entry;
   }
 
-  private static bool ContainsCraftingRecipeCreation(ExpressionSyntax expression)
+  private static bool IsCraftingRecipeType(string typeName)
   {
-    return expression
-      .DescendantNodesAndSelf()
-      .OfType<ObjectCreationExpressionSyntax>()
-      .Any(node => node.Type.ToString().EndsWith("CraftingRecipe", StringComparison.Ordinal));
+    return typeName.EndsWith("CraftingRecipe", StringComparison.Ordinal);
+  }
+
+  private static ExpressionSyntax GetOutermostChainedExpression(ExpressionSyntax expression)
+  {
+    var cursor = Unwrap(expression);
+
+    while (
+      cursor.Parent is MemberAccessExpressionSyntax memberAccess
+      && memberAccess.Expression == cursor
+      && memberAccess.Parent is InvocationExpressionSyntax invocation
+      && invocation.Expression == memberAccess
+    )
+    {
+      cursor = invocation;
+    }
+
+    return cursor;
   }
 
   private static (string ItemExpression, int Amount)? TryReadRequirement(InvocationExpressionSyntax invocation)
@@ -132,7 +135,7 @@ internal static class RecipeParser
     if (args is null || args.Value.Count < 2)
       return null;
 
-    var amount = SyntaxParsingHelpers.TryParseInt(args.Value[1].Expression);
+    var amount = SyntaxParsingUtils.TryParseInt(args.Value[1].Expression);
     if (!amount.HasValue)
       return null;
 
@@ -168,5 +171,25 @@ internal static class RecipeParser
       return text["Block.".Length..^".item".Length];
 
     return text;
+  }
+
+  private static ExpressionSyntax Unwrap(ExpressionSyntax expression)
+  {
+    var cursor = expression;
+
+    while (true)
+    {
+      switch (cursor)
+      {
+        case ParenthesizedExpressionSyntax parenthesized:
+          cursor = parenthesized.Expression;
+          continue;
+        case CastExpressionSyntax cast:
+          cursor = cast.Expression;
+          continue;
+        default:
+          return cursor;
+      }
+    }
   }
 }

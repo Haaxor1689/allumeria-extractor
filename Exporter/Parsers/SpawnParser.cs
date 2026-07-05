@@ -52,10 +52,10 @@ internal static class SpawnParser
     if (!File.Exists(path))
       return new Dictionary<string, List<object>>(StringComparer.Ordinal);
 
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var byId = new Dictionary<string, List<object>>(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
       foreach (var variable in field.Declaration.Variables)
       {
@@ -76,7 +76,7 @@ internal static class SpawnParser
     {
       foreach (var invocation in initMethod.Body.DescendantNodes().OfType<InvocationExpressionSyntax>())
       {
-        if (SyntaxParsingHelpers.GetInvocationName(invocation) != "AddEntry")
+        if (SyntaxParsingUtils.GetInvocationName(invocation) != "AddEntry")
           continue;
 
         if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)

@@ -10,11 +10,11 @@ internal static class ItemParser
     if (!File.Exists(path))
       return [];
 
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var list = new List<object>();
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
       foreach (var variable in field.Declaration.Variables)
       {
@@ -22,21 +22,21 @@ internal static class ItemParser
         if (initializer is null)
           continue;
 
-        var ctor = SyntaxParsingHelpers.TryGetRootObjectCreation(initializer);
+        var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(initializer);
         if (ctor is null)
           continue;
 
-        var invocations = SyntaxParsingHelpers.FindInvocations(initializer).ToArray();
+        var invocations = SyntaxParsingUtils.FindInvocations(initializer).ToArray();
         var symbol = variable.Identifier.Text;
-        var id = SyntaxParsingHelpers.TryReadIdFromObjectCreation(ctor) ?? symbol;
+        var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? symbol;
         var constructorType = ctor.Type.ToString();
         var typeName = NormalizeTypeName(constructorType);
 
         var tags = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "AddTag")
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "AddTag")
           .Select(inv => new
           {
-            key = SyntaxParsingHelpers.TryReadQualifiedMemberArg(inv, 0, "ItemTag"),
+            key = SyntaxParsingUtils.TryReadQualifiedMemberArg(inv, 0, "ItemTag"),
             value = TryReadExpressionArg(inv, 1) ?? true,
           })
           .Where(entry => !string.IsNullOrWhiteSpace(entry.key))
@@ -46,42 +46,42 @@ internal static class ItemParser
           .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
         var stackSize = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SetStackSize")
-          .Select(inv => SyntaxParsingHelpers.TryReadIntArg(inv, 0))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SetStackSize")
+          .Select(inv => SyntaxParsingUtils.TryReadIntArg(inv, 0))
           .FirstOrDefault(value => value.HasValue);
 
         var sellValue = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SellValue")
-          .Select(inv => SyntaxParsingHelpers.TryReadIntArg(inv, 0))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SellValue")
+          .Select(inv => SyntaxParsingUtils.TryReadIntArg(inv, 0))
           .FirstOrDefault(value => value.HasValue);
 
-        var hidden = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "Hide");
-        var sweeping = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "MakeSweeping");
-        var targetLiquid = invocations.Any(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "TargetLiquid");
+        var hidden = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "Hide");
+        var sweeping = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeSweeping");
+        var targetLiquid = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "TargetLiquid");
 
         var swingAnim = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) is "SetSwingAnim" or "SetSwingAnimation")
-          .Select(inv => SyntaxParsingHelpers.TryReadIntArg(inv, 0))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) is "SetSwingAnim" or "SetSwingAnimation")
+          .Select(inv => SyntaxParsingUtils.TryReadIntArg(inv, 0))
           .FirstOrDefault(value => value.HasValue);
 
         var modelInvocation = invocations.FirstOrDefault(inv =>
-          SyntaxParsingHelpers.GetInvocationName(inv) == "SetModel"
+          SyntaxParsingUtils.GetInvocationName(inv) == "SetModel"
         );
         var itemModel = TryReadExpressionArg(modelInvocation, 0) as string;
         var itemTexture = TryReadExpressionArg(modelInvocation, 1) as string;
 
         var currencyAmount = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "IsCurrency")
-          .Select(inv => SyntaxParsingHelpers.TryReadIntArg(inv, 0))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "IsCurrency")
+          .Select(inv => SyntaxParsingUtils.TryReadIntArg(inv, 0))
           .FirstOrDefault(value => value.HasValue);
 
         var rarity = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SetRarity")
-          .Select(inv => SyntaxParsingHelpers.TryReadIntArg(inv, 0))
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SetRarity")
+          .Select(inv => SyntaxParsingUtils.TryReadIntArg(inv, 0))
           .FirstOrDefault(value => value.HasValue);
 
         var category = invocations
-          .Where(inv => SyntaxParsingHelpers.GetInvocationName(inv) == "SetCategory")
+          .Where(inv => SyntaxParsingUtils.GetInvocationName(inv) == "SetCategory")
           .Select(inv => TryReadCategoryNames(inv, 0))
           .FirstOrDefault(values => values.Count > 0);
 
@@ -221,7 +221,7 @@ internal static class ItemParser
 
     foreach (var file in Directory.EnumerateFiles(itemTypesRoot, "*.cs", SearchOption.AllDirectories))
     {
-      var root = SyntaxParsingHelpers.ParseCompilationUnit(file);
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
       var constructors = root.DescendantNodes().OfType<ConstructorDeclarationSyntax>();
 
       foreach (var constructor in constructors)
@@ -318,7 +318,7 @@ internal static class ItemParser
     return cursor switch
     {
       LiteralExpressionSyntax literal when literal.Token.Value is not null => literal.Token.Value,
-      InvocationExpressionSyntax invocation when SyntaxParsingHelpers.GetInvocationName(invocation) == "nameof" =>
+      InvocationExpressionSyntax invocation when SyntaxParsingUtils.GetInvocationName(invocation) == "nameof" =>
         invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression switch
         {
           IdentifierNameSyntax identifier => identifier.Identifier.Text,

@@ -4,50 +4,85 @@ internal static class LootParser
 {
   public static List<object> Parse(string sourceRoot)
   {
-    var path = Path.Combine(sourceRoot, "Items", "LootTables", "LootDescription.cs");
-    if (!File.Exists(path))
-      return [];
-
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(path);
     var list = new List<object>();
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var field in SyntaxParsingHelpers.FindPublicStaticFields(root))
+    foreach (var file in SyntaxParsingUtils.EnumerateSourceFiles(sourceRoot))
     {
-      foreach (var variable in field.Declaration.Variables)
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
+
+      foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
       {
-        var initializer = variable.Initializer?.Value;
-        if (initializer is null)
-          continue;
-
-        var ctor = SyntaxParsingHelpers.TryGetRootObjectCreation(initializer);
-        if (ctor is null || NormalizeTypeName(ctor.Type.ToString()) != "LootDescription")
-          continue;
-
-        var symbol = variable.Identifier.Text;
-        var id = SyntaxParsingHelpers.TryReadIdFromObjectCreation(ctor) ?? symbol;
-        if (!seen.Add(id))
-          continue;
-
-        var group = TryReadLootGroupName(ctor) ?? "Misc";
-        var entryCount = SyntaxParsingHelpers
-          .FindInvocations(initializer)
-          .Count(invocation => SyntaxParsingHelpers.GetInvocationName(invocation) == "AddEntry");
-        var entries = ParseEntriesFromInitializer(initializer);
-
-        var entry = new Dictionary<string, object?>(StringComparer.Ordinal)
+        foreach (var variable in field.Declaration.Variables)
         {
-          ["id"] = id,
-          ["group"] = group,
-          ["entryCount"] = entryCount,
-          ["entries"] = entries,
-        };
+          var initializer = variable.Initializer?.Value;
+          if (initializer is null)
+            continue;
 
-        list.Add(entry);
+          AddLootEntry(initializer, variable.Identifier.Text, list, seen);
+        }
+      }
+
+      foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+      {
+        if (NormalizeTypeName(creation.Type.ToString()) != "LootDescription")
+          continue;
+
+        var expression = GetOutermostChainedExpression(creation);
+        AddLootEntry(expression, fallbackSymbol: null, list, seen);
       }
     }
 
     return list;
+  }
+
+  private static void AddLootEntry(
+    ExpressionSyntax expression,
+    string? fallbackSymbol,
+    ICollection<object> list,
+    ISet<string> seen
+  )
+  {
+    var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(expression);
+    if (ctor is null || NormalizeTypeName(ctor.Type.ToString()) != "LootDescription")
+      return;
+
+    var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? fallbackSymbol;
+    if (string.IsNullOrWhiteSpace(id) || !seen.Add(id))
+      return;
+
+    var group = TryReadLootGroupName(ctor) ?? "Misc";
+    var entryCount = SyntaxParsingUtils
+      .FindInvocations(expression)
+      .Count(invocation => SyntaxParsingUtils.GetInvocationName(invocation) == "AddEntry");
+    var entries = ParseEntriesFromInitializer(expression);
+
+    var entry = new Dictionary<string, object?>(StringComparer.Ordinal)
+    {
+      ["id"] = id,
+      ["group"] = group,
+      ["entryCount"] = entryCount,
+      ["entries"] = entries,
+    };
+
+    list.Add(entry);
+  }
+
+  private static ExpressionSyntax GetOutermostChainedExpression(ExpressionSyntax expression)
+  {
+    var cursor = Unwrap(expression);
+
+    while (
+      cursor.Parent is MemberAccessExpressionSyntax memberAccess
+      && memberAccess.Expression == cursor
+      && memberAccess.Parent is InvocationExpressionSyntax invocation
+      && invocation.Expression == memberAccess
+    )
+    {
+      cursor = invocation;
+    }
+
+    return cursor;
   }
 
   private static string NormalizeTypeName(string typeName)
@@ -126,7 +161,7 @@ internal static class LootParser
 
   private static bool IsAddEntryInvocation(InvocationExpressionSyntax invocation)
   {
-    return SyntaxParsingHelpers.GetInvocationName(invocation) == "AddEntry";
+    return SyntaxParsingUtils.GetInvocationName(invocation) == "AddEntry";
   }
 
   private static IReadOnlyList<object> ParseEntryArray(IEnumerable<ExpressionSyntax> expressions)
@@ -336,7 +371,7 @@ internal static class LootParser
     return reduced switch
     {
       LiteralExpressionSyntax literal when literal.Token.Value is not null => literal.Token.Value,
-      InvocationExpressionSyntax invocation when SyntaxParsingHelpers.GetInvocationName(invocation) == "nameof" =>
+      InvocationExpressionSyntax invocation when SyntaxParsingUtils.GetInvocationName(invocation) == "nameof" =>
         invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression switch
         {
           IdentifierNameSyntax identifier => identifier.Identifier.Text,

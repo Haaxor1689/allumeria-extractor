@@ -45,7 +45,7 @@ internal static class CreatureParser
     var metadataByType = BuildEntityMetadataMap(sourceRoot);
     var spawnByMonster = SpawnParser.BuildMonsterSpawnLookup(sourceRoot);
 
-    var root = SyntaxParsingHelpers.ParseCompilationUnit(entityRootPath);
+    var root = SyntaxParsingUtils.ParseCompilationUnit(entityRootPath);
     var registerMethod = root.DescendantNodes()
       .OfType<MethodDeclarationSyntax>()
       .FirstOrDefault(method => method.Identifier.Text == "RegisterEntities");
@@ -57,7 +57,7 @@ internal static class CreatureParser
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var invocation in registerMethod.DescendantNodes().OfType<InvocationExpressionSyntax>())
     {
-      if (SyntaxParsingHelpers.GetInvocationName(invocation) != "RegisterEntityType")
+      if (SyntaxParsingUtils.GetInvocationName(invocation) != "RegisterEntityType")
         continue;
 
       if (invocation.ArgumentList.Arguments.Count == 0)
@@ -110,7 +110,7 @@ internal static class CreatureParser
 
     foreach (var file in Directory.EnumerateFiles(entitiesRoot, "*.cs", SearchOption.AllDirectories))
     {
-      var root = SyntaxParsingHelpers.ParseCompilationUnit(file);
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
 
       foreach (var declaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
       {
@@ -358,7 +358,7 @@ internal static class CreatureParser
 
     foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
     {
-      if (SyntaxParsingHelpers.GetInvocationName(invocation) != "SetModel")
+      if (SyntaxParsingUtils.GetInvocationName(invocation) != "SetModel")
         continue;
 
       if (
@@ -386,7 +386,7 @@ internal static class CreatureParser
     if (argumentExpression is not InvocationExpressionSyntax argumentInvocation)
       return null;
 
-    if (SyntaxParsingHelpers.GetInvocationName(argumentInvocation) != "GetModel")
+    if (SyntaxParsingUtils.GetInvocationName(argumentInvocation) != "GetModel")
       return null;
 
     if (argumentInvocation.ArgumentList.Arguments.Count == 0)
