@@ -24,19 +24,20 @@ Directory.CreateDirectory(outputRoot);
 Directory.CreateDirectory(Path.Combine(outputRoot, "data"));
 
 Console.WriteLine("[2/5] Parsing source data...");
+var blockParseResult = ExporterUtils.RunWithProgress(
+  "Parsing blocks",
+  () => BlockParser.Parse(sourceRoot),
+  result => $"{result.Blocks.Count} blocks, {result.Items.Count} block items"
+);
+var blocks = blockParseResult.Blocks;
 var items = ExporterUtils.RunWithProgress(
   "Parsing items",
-  () => ItemParser.Parse(sourceRoot),
+  () => ItemParser.Parse(sourceRoot, blockParseResult.Items),
   result => $"{result.Count} records"
 );
 var recipes = ExporterUtils.RunWithProgress(
   "Parsing recipes",
   () => RecipeParser.Parse(sourceRoot),
-  result => $"{result.Count} records"
-);
-var blocks = ExporterUtils.RunWithProgress(
-  "Parsing blocks",
-  () => BlockParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
 var creatures = ExporterUtils.RunWithProgress(
@@ -46,7 +47,7 @@ var creatures = ExporterUtils.RunWithProgress(
 );
 var loots = ExporterUtils.RunWithProgress(
   "Parsing loot tables",
-  () => LootParser.Parse(sourceRoot),
+  () => LootParser.Parse(sourceRoot, blockParseResult.Loots),
   result => $"{result.Count} records"
 );
 var spawns = ExporterUtils.RunWithProgress(

@@ -2,10 +2,13 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 internal static class LootParser
 {
-  public static List<object> Parse(string sourceRoot)
+  public static List<object> Parse(string sourceRoot, List<object>? seededLoots = null)
   {
-    var list = new List<object>();
-    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var list = seededLoots is null ? new List<object>() : [.. seededLoots];
+    var indexById = BuildIndexById(list);
+    var syntheticIds = seededLoots is null
+      ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+      : new HashSet<string>(indexById.Keys, StringComparer.OrdinalIgnoreCase);
 
     foreach (var file in SyntaxParsingUtils.EnumerateSourceFiles(sourceRoot))
     {
@@ -19,7 +22,7 @@ internal static class LootParser
           if (initializer is null)
             continue;
 
-          AddLootEntry(initializer, variable.Identifier.Text, list, seen);
+          AddLootEntry(initializer, variable.Identifier.Text, list, indexById, syntheticIds);
         }
       }
 
@@ -29,7 +32,7 @@ internal static class LootParser
           continue;
 
         var expression = GetOutermostChainedExpression(creation);
-        AddLootEntry(expression, fallbackSymbol: null, list, seen);
+        AddLootEntry(expression, fallbackSymbol: null, list, indexById, syntheticIds);
       }
     }
 
@@ -39,8 +42,9 @@ internal static class LootParser
   private static void AddLootEntry(
     ExpressionSyntax expression,
     string? fallbackSymbol,
-    ICollection<object> list,
-    ISet<string> seen
+    IList<object> list,
+    IDictionary<string, int> indexById,
+    ISet<string> syntheticIds
   )
   {
     var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(expression);
@@ -48,24 +52,52 @@ internal static class LootParser
       return;
 
     var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? fallbackSymbol;
-    if (string.IsNullOrWhiteSpace(id) || !seen.Add(id))
+    if (string.IsNullOrWhiteSpace(id))
       return;
 
     var group = TryReadLootGroupName(ctor) ?? "Misc";
-    var entryCount = SyntaxParsingUtils
-      .FindInvocations(expression)
-      .Count(invocation => SyntaxParsingUtils.GetInvocationName(invocation) == "AddEntry");
     var entries = ParseEntriesFromInitializer(expression);
 
     var entry = new Dictionary<string, object?>(StringComparer.Ordinal)
     {
       ["id"] = id,
       ["group"] = group,
-      ["entryCount"] = entryCount,
       ["entries"] = entries,
     };
 
+    if (indexById.TryGetValue(id, out var existingIndex))
+    {
+      if (!syntheticIds.Remove(id))
+        return;
+
+      list[existingIndex] = entry;
+      return;
+    }
+
+    indexById[id] = list.Count;
     list.Add(entry);
+  }
+
+  private static Dictionary<string, int> BuildIndexById(IReadOnlyList<object> entries)
+  {
+    var indexById = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+    for (var index = 0; index < entries.Count; index++)
+    {
+      if (entries[index] is not IDictionary<string, object?> entry)
+        continue;
+
+      if (!entry.TryGetValue("id", out var idValue))
+        continue;
+
+      var id = idValue?.ToString();
+      if (string.IsNullOrWhiteSpace(id))
+        continue;
+
+      indexById[id] = index;
+    }
+
+    return indexById;
   }
 
   private static ExpressionSyntax GetOutermostChainedExpression(ExpressionSyntax expression)

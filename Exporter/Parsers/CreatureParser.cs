@@ -67,6 +67,9 @@ internal static class CreatureParser
       if (string.IsNullOrWhiteSpace(typeName))
         continue;
 
+      if (string.Equals(typeName, "LivingEntity", StringComparison.Ordinal))
+        continue;
+
       if (!seen.Add(typeName))
         continue;
 
@@ -80,17 +83,14 @@ internal static class CreatureParser
 
       if (metadataByType.TryGetValue(typeName, out var metadata))
       {
-        entry["boss"] = string.Equals(metadata.Category, "Bosses", StringComparison.Ordinal);
-      }
-      else
-      {
-        entry["boss"] = false;
+        if (string.Equals(metadata.Category, "Bosses", StringComparison.Ordinal))
+          entry["boss"] = true;
       }
 
       var livingFields = ResolveLivingFieldValues(typeName, metadataByType);
       foreach (var fieldName in LivingFieldOrder)
       {
-        if (livingFields.TryGetValue(fieldName, out var value))
+        if (livingFields.TryGetValue(fieldName, out var value) && !IsEmptyLivingFieldValue(fieldName, value))
           entry[fieldName] = value;
       }
 
@@ -574,6 +574,26 @@ internal static class CreatureParser
       ulong v when v <= int.MaxValue => (int)v,
       _ => null,
     };
+  }
+
+  private static bool IsEmptyLivingFieldValue(string fieldName, object? value)
+  {
+    return fieldName switch
+    {
+      "canSpawnInSunlight" => value is bool boolValue && !boolValue,
+      "defence" => TryConvertToInt(value) == 0,
+      "scale" => IsDefaultScale(value),
+      "loot" => value is null,
+      _ => false,
+    };
+  }
+
+  private static bool IsDefaultScale(object? value)
+  {
+    if (value is not float[] scale || scale.Length != 3)
+      return false;
+
+    return scale[0] == 1f && scale[1] == 1f && scale[2] == 1f;
   }
 
   private sealed record EntityTypeMetadata(

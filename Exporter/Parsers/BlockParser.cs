@@ -1,18 +1,28 @@
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
+internal sealed class BlockParseResult
+{
+  public List<object> Blocks { get; } = [];
+  public List<object> Items { get; } = [];
+  public List<object> Loots { get; } = [];
+}
+
 internal static class BlockParser
 {
   private const string BlockTypesRelativePath = "Blocks\\Blocks";
 
-  public static List<object> Parse(string sourceRoot)
+  public static BlockParseResult Parse(string sourceRoot)
   {
     var path = Path.Combine(sourceRoot, "Blocks", "Blocks", "Block.cs");
     if (!File.Exists(path))
-      return [];
+      return new BlockParseResult();
 
     var root = SyntaxParsingUtils.ParseCompilationUnit(path);
-    var list = new List<object>();
+    var result = new BlockParseResult();
     var blockEntriesById = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+    var itemEntriesById = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+    var lootEntriesById = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+    var itemIdsBySymbol = ReadItemIdsBySymbol(sourceRoot);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
     var defaultCraftingTypesByType = BuildDefaultCraftingTypeMap(sourceRoot);
 
@@ -123,6 +133,7 @@ internal static class BlockParser
         var canBeShaped = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "AutoGenVariants");
 
         var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
+        var itemEntry = CreateDefaultItemEntry(id, sprite, sellValue);
 
         if (typeName != "Block")
           entry["type"] = typeName;
@@ -135,9 +146,6 @@ internal static class BlockParser
 
         if (spawnRate.HasValue && spawnRate.Value > 0)
           entry["spawnRate"] = spawnRate.Value;
-
-        if (sellValue.HasValue)
-          entry["sellValue"] = sellValue.Value;
 
         if (hidden)
           entry["hidden"] = true;
@@ -161,13 +169,10 @@ internal static class BlockParser
           entry["canBeShaped"] = true;
 
         if (category is { Count: > 0 })
-          entry["category"] = category;
+          itemEntry["category"] = category;
 
         if (textures.Count > 0)
           entry["textures"] = textures;
-
-        if (!string.IsNullOrWhiteSpace(sprite) && sprite != id)
-          entry["sprite"] = sprite;
 
         if (!string.IsNullOrWhiteSpace(blockModel))
           entry["blockModel"] = blockModel;
@@ -186,20 +191,37 @@ internal static class BlockParser
 
         AddExtraConstructorFields(entry, ctor, constructorType, typeName, constructorParamsByType);
 
-        list.Add(entry);
+        result.Blocks.Add(entry);
+        result.Items.Add(itemEntry);
         if (!string.IsNullOrWhiteSpace(id))
+        {
           blockEntriesById[id] = entry;
+          itemEntriesById[id] = itemEntry;
+        }
       }
     }
 
-    ApplyProjectWideBlockAssignments(sourceRoot, blockEntriesById);
+    ApplyProjectWideBlockAssignments(
+      sourceRoot,
+      blockEntriesById,
+      itemEntriesById,
+      lootEntriesById,
+      result.Items,
+      result.Loots,
+      itemIdsBySymbol
+    );
 
-    return list;
+    return result;
   }
 
   private static void ApplyProjectWideBlockAssignments(
     string sourceRoot,
-    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById,
+    IDictionary<string, Dictionary<string, object?>> lootEntriesById,
+    IList<object> items,
+    IList<object> loots,
+    IReadOnlyDictionary<string, string> itemIdsBySymbol
   )
   {
     foreach (var file in SyntaxParsingUtils.EnumerateSourceFiles(sourceRoot))
@@ -216,16 +238,19 @@ internal static class BlockParser
             ApplySetLootInvocation(invocation, blockEntriesById);
             break;
           case "SetDropItem":
-            ApplySetDropItemInvocation(invocation, blockEntriesById);
+            ApplySetDropItemInvocation(invocation, blockEntriesById, lootEntriesById, loots);
             break;
           case "OverwriteItem":
-            ApplyOverwriteItemInvocation(invocation, blockEntriesById);
+            ApplyOverwriteItemInvocation(invocation, blockEntriesById, itemEntriesById, items, itemIdsBySymbol);
             break;
           case "SetRarity":
-            ApplySetRarityInvocation(invocation, blockEntriesById);
+            ApplySetRarityInvocation(invocation, blockEntriesById, itemEntriesById);
             break;
           case "TargetLiquid":
-            ApplyTargetLiquidInvocation(invocation, blockEntriesById);
+            ApplyTargetLiquidInvocation(invocation, blockEntriesById, itemEntriesById);
+            break;
+          case "AddTag":
+            ApplyAddTagInvocation(invocation, blockEntriesById, itemEntriesById);
             break;
         }
       }
@@ -258,7 +283,9 @@ internal static class BlockParser
 
   private static void ApplySetDropItemInvocation(
     InvocationExpressionSyntax invocation,
-    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    IDictionary<string, Dictionary<string, object?>> lootEntriesById,
+    IList<object> loots
   )
   {
     if (!TryReadBlockTargetId(invocation, out var blockId))
@@ -272,12 +299,16 @@ internal static class BlockParser
     if (string.IsNullOrWhiteSpace(dropItem))
       return;
 
-    blockEntry["dropItem"] = dropItem;
+    EnsureSyntheticDropLoot(dropItem!, lootEntriesById, loots);
+    blockEntry["loot"] = dropItem;
   }
 
   private static void ApplyOverwriteItemInvocation(
     InvocationExpressionSyntax invocation,
-    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById,
+    IList<object> items,
+    IReadOnlyDictionary<string, string> itemIdsBySymbol
   )
   {
     if (!TryReadBlockTargetId(invocation, out var blockId))
@@ -286,33 +317,54 @@ internal static class BlockParser
     if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
       return;
 
+    if (!TryGetItemEntry(itemEntriesById, blockId, out var blockItemEntry))
+      return;
+
     var argument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
-    var itemId = NormalizeEntityExpression(argument?.ToString());
+    var itemId = NormalizeEntityExpression(argument?.ToString(), itemIdsBySymbol);
     if (string.IsNullOrWhiteSpace(itemId))
       return;
 
     blockEntry["item"] = itemId;
+
+    var itemEntry = RenameOrMergeItemEntry(items, itemEntriesById, blockItemEntry, blockId!, itemId!);
+    itemEntry["block"] = blockId!;
+
+    var placeable =
+      invocation.ArgumentList.Arguments.Count > 1
+        ? TryReadBoolLiteral(invocation.ArgumentList.Arguments[1].Expression)
+        : null;
+
+    if (placeable == false)
+      RemoveTag(itemEntry, "can_place");
+    else
+      AddOrUpdateTag(itemEntry, "can_place", true);
   }
 
   private static void ApplySetRarityInvocation(
     InvocationExpressionSyntax invocation,
-    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById
   )
   {
     if (!TryReadBlockItemTargetId(invocation, out var blockId))
       return;
 
     if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    if (!TryGetLinkedItemEntry(blockEntry, blockId, itemEntriesById, out var itemEntry))
       return;
 
     var rarity = SyntaxParsingUtils.TryReadIntArg(invocation, 0);
     if (rarity.HasValue)
-      blockEntry["rarity"] = rarity.Value;
+      itemEntry["rarity"] = rarity.Value;
   }
 
   private static void ApplyTargetLiquidInvocation(
     InvocationExpressionSyntax invocation,
-    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById
   )
   {
     if (!TryReadBlockItemTargetId(invocation, out var blockId))
@@ -321,7 +373,37 @@ internal static class BlockParser
     if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
       return;
 
-    blockEntry["targetLiquid"] = true;
+    if (!TryGetLinkedItemEntry(blockEntry, blockId, itemEntriesById, out var itemEntry))
+      return;
+
+    itemEntry["targetLiquid"] = true;
+  }
+
+  private static void ApplyAddTagInvocation(
+    InvocationExpressionSyntax invocation,
+    IReadOnlyDictionary<string, Dictionary<string, object?>> blockEntriesById,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById
+  )
+  {
+    if (!TryReadBlockItemTargetId(invocation, out var blockId))
+      return;
+
+    if (!TryGetBlockEntry(blockEntriesById, blockId, out var blockEntry))
+      return;
+
+    if (!TryGetLinkedItemEntry(blockEntry, blockId, itemEntriesById, out var itemEntry))
+      return;
+
+    var tagKey = SyntaxParsingUtils.TryReadQualifiedMemberArg(invocation, 0, "ItemTag");
+    if (string.IsNullOrWhiteSpace(tagKey))
+      return;
+
+    var tagValue =
+      invocation.ArgumentList.Arguments.Count > 1
+        ? TryParseLiteralLikeValue(invocation.ArgumentList.Arguments[1].Expression) ?? true
+        : true;
+
+    AddOrUpdateTag(itemEntry, tagKey!, tagValue);
   }
 
   private static void ApplyBlockAssignment(
@@ -368,6 +450,45 @@ internal static class BlockParser
 
     entry = null!;
     return false;
+  }
+
+  private static bool TryGetItemEntry(
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById,
+    string? itemId,
+    out Dictionary<string, object?> entry
+  )
+  {
+    if (!string.IsNullOrWhiteSpace(itemId) && itemEntriesById.TryGetValue(itemId, out var found))
+    {
+      entry = found;
+      return true;
+    }
+
+    entry = null!;
+    return false;
+  }
+
+  private static bool TryGetLinkedItemEntry(
+    IReadOnlyDictionary<string, object?> blockEntry,
+    string? blockId,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById,
+    out Dictionary<string, object?> itemEntry
+  )
+  {
+    var itemId = GetLinkedItemId(blockEntry, blockId);
+    return TryGetItemEntry(itemEntriesById, itemId, out itemEntry);
+  }
+
+  private static string? GetLinkedItemId(IReadOnlyDictionary<string, object?> blockEntry, string? blockId)
+  {
+    if (blockEntry.TryGetValue("item", out var linkedItemValue))
+    {
+      var linkedItemId = linkedItemValue?.ToString();
+      if (!string.IsNullOrWhiteSpace(linkedItemId))
+        return linkedItemId;
+    }
+
+    return blockId;
   }
 
   private static bool TryReadBlockTargetId(InvocationExpressionSyntax invocation, out string? blockId)
@@ -452,7 +573,10 @@ internal static class BlockParser
     return null;
   }
 
-  private static string? NormalizeEntityExpression(string? expression)
+  private static string? NormalizeEntityExpression(
+    string? expression,
+    IReadOnlyDictionary<string, string>? itemIdsBySymbol = null
+  )
   {
     if (string.IsNullOrWhiteSpace(expression))
       return null;
@@ -468,7 +592,12 @@ internal static class BlockParser
     }
 
     if (text.StartsWith("Item.", StringComparison.Ordinal) && text.Length > "Item.".Length)
-      return text["Item.".Length..];
+    {
+      var itemSymbol = text["Item.".Length..];
+      if (itemIdsBySymbol is not null && itemIdsBySymbol.TryGetValue(itemSymbol, out var itemId))
+        return itemId;
+      return itemSymbol;
+    }
 
     if (
       text.StartsWith("Block.", StringComparison.Ordinal)
@@ -565,6 +694,145 @@ internal static class BlockParser
 
       entry[NormalizeConstructorFieldName(parameterName)] = value;
     }
+  }
+
+  private static Dictionary<string, object?> CreateDefaultItemEntry(string id, string? sprite, int? sellValue)
+  {
+    var itemEntry = new Dictionary<string, object?>(StringComparer.Ordinal)
+    {
+      ["id"] = id,
+      ["block"] = id,
+      ["tags"] = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase) { ["can_place"] = true },
+    };
+
+    if (!string.IsNullOrWhiteSpace(sprite) && sprite != id)
+      itemEntry["sprite"] = sprite;
+
+    if (sellValue.HasValue)
+      itemEntry["sellValue"] = sellValue.Value;
+
+    return itemEntry;
+  }
+
+  private static void EnsureSyntheticDropLoot(
+    string itemId,
+    IDictionary<string, Dictionary<string, object?>> lootEntriesById,
+    IList<object> loots
+  )
+  {
+    if (lootEntriesById.ContainsKey(itemId))
+      return;
+
+    var lootEntry = new Dictionary<string, object?>(StringComparer.Ordinal)
+    {
+      ["id"] = itemId,
+      ["group"] = "Misc",
+      ["entries"] = new object[]
+      {
+        new Dictionary<string, object?>(StringComparer.Ordinal) { ["item"] = itemId, ["amount"] = 1 },
+      },
+    };
+
+    loots.Add(lootEntry);
+    lootEntriesById[itemId] = lootEntry;
+  }
+
+  private static Dictionary<string, string> ReadItemIdsBySymbol(string sourceRoot)
+  {
+    var path = Path.Combine(sourceRoot, "Items", "Item.cs");
+    if (!File.Exists(path))
+      return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
+    var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
+    {
+      foreach (var variable in field.Declaration.Variables)
+      {
+        var initializer = variable.Initializer?.Value;
+        if (initializer is null)
+          continue;
+
+        var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(initializer);
+        if (ctor is null)
+          continue;
+
+        var symbol = variable.Identifier.Text;
+        var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? symbol;
+        map[symbol] = id;
+      }
+    }
+
+    return map;
+  }
+
+  private static Dictionary<string, object?> RenameOrMergeItemEntry(
+    IList<object> items,
+    IDictionary<string, Dictionary<string, object?>> itemEntriesById,
+    Dictionary<string, object?> sourceEntry,
+    string sourceItemId,
+    string targetItemId
+  )
+  {
+    if (string.Equals(sourceItemId, targetItemId, StringComparison.OrdinalIgnoreCase))
+      return sourceEntry;
+
+    itemEntriesById.Remove(sourceItemId);
+
+    if (itemEntriesById.TryGetValue(targetItemId, out var existingTarget))
+    {
+      MergeEntries(existingTarget, sourceEntry);
+      items.Remove(sourceEntry);
+      return existingTarget;
+    }
+
+    sourceEntry["id"] = targetItemId;
+    itemEntriesById[targetItemId] = sourceEntry;
+    return sourceEntry;
+  }
+
+  private static void MergeEntries(
+    IDictionary<string, object?> destination,
+    IReadOnlyDictionary<string, object?> source
+  )
+  {
+    foreach (var (key, value) in source)
+    {
+      if (key == "id")
+        continue;
+
+      if (key == "tags" && value is IReadOnlyDictionary<string, object?> sourceTags)
+      {
+        foreach (var (tagKey, tagValue) in sourceTags)
+          AddOrUpdateTag(destination, tagKey, tagValue);
+        continue;
+      }
+
+      if (!destination.ContainsKey(key))
+        destination[key] = value;
+    }
+  }
+
+  private static void AddOrUpdateTag(IDictionary<string, object?> itemEntry, string tagKey, object? tagValue)
+  {
+    if (!itemEntry.TryGetValue("tags", out var tagsValue) || tagsValue is not Dictionary<string, object?> tags)
+    {
+      tags = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+      itemEntry["tags"] = tags;
+    }
+
+    tags[tagKey] = tagValue;
+  }
+
+  private static void RemoveTag(IDictionary<string, object?> itemEntry, string tagKey)
+  {
+    if (!itemEntry.TryGetValue("tags", out var tagsValue) || tagsValue is not Dictionary<string, object?> tags)
+      return;
+
+    tags.Remove(tagKey);
+    if (tags.Count == 0)
+      itemEntry.Remove("tags");
   }
 
   private static string NormalizeConstructorFieldName(string parameterName)

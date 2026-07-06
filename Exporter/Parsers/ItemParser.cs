@@ -4,14 +4,14 @@ internal static class ItemParser
 {
   private const string ItemTypesRelativePath = "Items\\ItemTypes";
 
-  public static List<object> Parse(string sourceRoot)
+  public static List<object> Parse(string sourceRoot, List<object> items)
   {
     var path = Path.Combine(sourceRoot, "Items", "Item.cs");
     if (!File.Exists(path))
-      return [];
+      return items;
 
     var root = SyntaxParsingUtils.ParseCompilationUnit(path);
-    var list = new List<object>();
+    var itemEntriesById = BuildEntryMap(items);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
 
     foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
@@ -85,7 +85,9 @@ internal static class ItemParser
           .Select(inv => TryReadCategoryNames(inv, 0))
           .FirstOrDefault(values => values.Count > 0);
 
-        var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
+        var entry = itemEntriesById.TryGetValue(id, out var existingEntry)
+          ? existingEntry
+          : new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
 
         if (typeName != "Item")
           entry["type"] = typeName;
@@ -121,18 +123,109 @@ internal static class ItemParser
           entry["rarity"] = rarity.Value;
 
         if (category is { Count: > 0 })
-          entry["category"] = category;
+          MergeCategories(entry, category);
 
         if (tags.Count > 0)
           entry["tags"] = tags;
 
         AddExtraConstructorFields(entry, ctor, constructorType, typeName, constructorParamsByType);
 
-        list.Add(entry);
+        if (!itemEntriesById.ContainsKey(id))
+        {
+          items.Add(entry);
+          itemEntriesById[id] = entry;
+        }
       }
     }
 
-    return list;
+    ApplyAssignCategoriesLogic(itemEntriesById.Values);
+
+    return items;
+  }
+
+  private static void ApplyAssignCategoriesLogic(IEnumerable<Dictionary<string, object?>> entries)
+  {
+    foreach (var entry in entries)
+    {
+      var hidden = entry.TryGetValue("hidden", out var hiddenValue) && hiddenValue is true;
+      if (hidden)
+        continue;
+
+      var derivedCategories = new List<string> { "all" };
+
+      var hasBlock =
+        entry.TryGetValue("block", out var blockValue)
+        && !string.IsNullOrWhiteSpace(blockValue?.ToString());
+      derivedCategories.Add(hasBlock ? "blocks" : "items");
+
+      var hasMeleeDamage = HasTag(entry, "melee_damage");
+      var hasRangedDamage = HasTag(entry, "ranged_damage");
+      var hasAmmo = HasTag(entry, "ammo");
+      if (hasMeleeDamage || hasRangedDamage || hasAmmo)
+        derivedCategories.Add("weapons");
+
+      var hasPickaxe = HasTag(entry, "pickaxe");
+      var hasAxe = HasTag(entry, "axe");
+      if (hasPickaxe || hasAxe)
+        derivedCategories.Add("tools");
+
+      MergeCategories(entry, derivedCategories);
+    }
+  }
+
+  private static bool HasTag(IReadOnlyDictionary<string, object?> entry, string tagName)
+  {
+    if (!entry.TryGetValue("tags", out var tagsValue) || tagsValue is not IReadOnlyDictionary<string, object?> tags)
+      return false;
+
+    return tags.ContainsKey(tagName);
+  }
+
+  private static void MergeCategories(IDictionary<string, object?> entry, IEnumerable<string> categories)
+  {
+    var merged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    if (entry.TryGetValue("category", out var existingValue) && existingValue is IEnumerable<string> existingCategories)
+    {
+      foreach (var existing in existingCategories)
+      {
+        if (!string.IsNullOrWhiteSpace(existing))
+          merged.Add(existing);
+      }
+    }
+
+    foreach (var category in categories)
+    {
+      if (!string.IsNullOrWhiteSpace(category))
+        merged.Add(category);
+    }
+
+    if (merged.Count == 0)
+      return;
+
+    entry["category"] = merged.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+  }
+
+  private static Dictionary<string, Dictionary<string, object?>> BuildEntryMap(IEnumerable<object> items)
+  {
+    var map = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var item in items)
+    {
+      if (item is not Dictionary<string, object?> entry)
+        continue;
+
+      if (!entry.TryGetValue("id", out var idValue))
+        continue;
+
+      var id = idValue?.ToString();
+      if (string.IsNullOrWhiteSpace(id))
+        continue;
+
+      map[id] = entry;
+    }
+
+    return map;
   }
 
   private static void AddExtraConstructorFields(
