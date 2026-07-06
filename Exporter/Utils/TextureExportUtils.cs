@@ -34,21 +34,21 @@ internal static class TextureExportUtils
     return copiedCount;
   }
 
-  public static int SliceTextureAtlasToWebp(
+  public static Dictionary<string, int> SliceTextureAtlasToWebp(
     string sourcePath,
     string destinationDirectory,
-    IReadOnlyDictionary<string, (int X, int Y, int Width, int Height)> regions
+    IReadOnlyDictionary<string, (int X, int Y, int Width, int Height, string Type)> regions
   )
   {
     if (!File.Exists(sourcePath) || regions.Count == 0)
-      return 0;
+      return new Dictionary<string, int>();
 
     Directory.CreateDirectory(destinationDirectory);
 
     using var atlas = Image.Load<Rgba32>(sourcePath);
     var atlasPixels = new Rgba32[atlas.Width * atlas.Height];
     atlas.CopyPixelDataTo(atlasPixels);
-    var slicedCount = 0;
+    var slicedCount = new Dictionary<string, int>(StringComparer.Ordinal);
 
     foreach (var (name, region) in regions)
     {
@@ -68,9 +68,12 @@ internal static class TextureExportUtils
         continue;
 
       using var slice = atlas.Clone(ctx => ctx.Crop(new Rectangle(region.X, region.Y, region.Width, region.Height)));
-      var destinationPath = Path.Combine(destinationDirectory, $"{name}.webp");
+      var destinationPath = Path.Combine(destinationDirectory, region.Type, $"{name}.webp");
+      Directory.CreateDirectory(Path.Combine(destinationDirectory, region.Type));
       slice.Save(destinationPath, new WebpEncoder());
-      slicedCount++;
+      if (!slicedCount.ContainsKey(region.Type))
+        slicedCount[region.Type] = 0;
+      slicedCount[region.Type]++;
     }
 
     return slicedCount;
