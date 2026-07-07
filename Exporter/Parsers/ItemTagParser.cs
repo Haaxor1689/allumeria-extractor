@@ -43,11 +43,7 @@ internal static class ItemTagParser
 
         var hasIcon = TryReadBoolArg(ctor, 2) ?? defaults.HasIcon;
 
-        var entry = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-          ["id"] = id,
-          ["label"] = label,
-        };
+        var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id, ["label"] = label };
 
         if (hasIcon)
         {
@@ -107,8 +103,12 @@ internal static class ItemTagParser
       var ch = text[index];
       switch (ch)
       {
-        case '(': depth++; break;
-        case ')': depth--; break;
+        case '(':
+          depth++;
+          break;
+        case ')':
+          depth--;
+          break;
         case ',' when depth == 0:
           args.Add(text[start..index].Trim());
           start = index + 1;

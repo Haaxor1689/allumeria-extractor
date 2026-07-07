@@ -118,7 +118,10 @@ internal static class TextureExportUtils
     return true;
   }
 
-  private static IEnumerable<(string Id, bool Optional)> ExtractIds(IEnumerable<object> entries, IEnumerable<string>? extraTextureIds)
+  private static IEnumerable<(string Id, bool Optional)> ExtractIds(
+    IEnumerable<object> entries,
+    IEnumerable<string>? extraTextureIds
+  )
   {
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -139,8 +142,8 @@ internal static class TextureExportUtils
       if (entry is not IDictionary<string, object?> dictionary)
         continue;
 
-      var hasSprite = dictionary.TryGetValue("sprite", out var spriteValue)
-        && !string.IsNullOrWhiteSpace(spriteValue?.ToString());
+      var hasSprite =
+        dictionary.TryGetValue("sprite", out var spriteValue) && !string.IsNullOrWhiteSpace(spriteValue?.ToString());
 
       if (dictionary.TryGetValue("id", out var idValue))
       {

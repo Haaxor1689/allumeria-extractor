@@ -396,8 +396,7 @@ internal static class ItemParser
       return [];
 
     var root = SyntaxParsingUtils.ParseCompilationUnit(path);
-    var field = root
-      .DescendantNodes()
+    var field = root.DescendantNodes()
       .OfType<FieldDeclarationSyntax>()
       .FirstOrDefault(f => f.Declaration.Variables.Any(v => v.Identifier.Text == "ammoTypeNames"));
 
