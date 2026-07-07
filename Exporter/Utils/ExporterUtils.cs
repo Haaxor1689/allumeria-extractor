@@ -14,31 +14,10 @@ internal static class ExporterUtils
       if (entry is not IDictionary<string, object?> dictionary)
         continue;
 
-      var hasExplicitSprite =
-        dictionary.TryGetValue("sprite", out var spriteValue) && !string.IsNullOrWhiteSpace(spriteValue?.ToString());
+      dictionary.TryGetValue("sprite", out var spriteValue);
+      dictionary.TryGetValue("id", out var idValue);
 
-      var sprite = hasExplicitSprite ? spriteValue!.ToString() : null;
-      if (!hasExplicitSprite)
-      {
-        // Block items without an explicit sprite implicitly use their item id as the sprite id.
-        var hasBlock =
-          dictionary.TryGetValue("block", out var blockValue) && !string.IsNullOrWhiteSpace(blockValue?.ToString());
-        var hasItemTexture =
-          dictionary.TryGetValue("itemTexture", out var itemTextureValue)
-          && !string.IsNullOrWhiteSpace(itemTextureValue?.ToString());
-
-        if (!hasBlock || hasItemTexture)
-          continue;
-
-        if (!dictionary.TryGetValue("id", out var idValue))
-          continue;
-
-        sprite = idValue?.ToString();
-      }
-
-      if (string.IsNullOrWhiteSpace(sprite) || sprite.Equals(fallbackSprite, StringComparison.OrdinalIgnoreCase))
-        continue;
-
+      var sprite = spriteValue is not null ? spriteValue.ToString() : idValue!.ToString();
       var sourcePath = Path.Combine(sourceDirectory, $"{sprite}.png");
       if (!File.Exists(sourcePath))
         dictionary["sprite"] = fallbackSprite;
