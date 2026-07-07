@@ -21,7 +21,8 @@ internal static class ExporterUtils
       if (!hasExplicitSprite)
       {
         // Block items without an explicit sprite implicitly use their item id as the sprite id.
-        var hasBlock = dictionary.TryGetValue("block", out var blockValue) && !string.IsNullOrWhiteSpace(blockValue?.ToString());
+        var hasBlock =
+          dictionary.TryGetValue("block", out var blockValue) && !string.IsNullOrWhiteSpace(blockValue?.ToString());
         var hasItemTexture =
           dictionary.TryGetValue("itemTexture", out var itemTextureValue)
           && !string.IsNullOrWhiteSpace(itemTextureValue?.ToString());
