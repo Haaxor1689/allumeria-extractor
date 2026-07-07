@@ -236,6 +236,7 @@ var parsedTranslationsCount = ExporterUtils.RunWithProgress(
 );
 
 Console.WriteLine("[5/5] Writing JSON files...");
+ExporterUtils.NormalizeMissingSprites(items, Path.Combine(assetsRoot, "textures", "atlas", "items"), "missing");
 ExporterUtils.RunActionWithProgress(
   "Writing items.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "items.json"), items, jsonOptions)

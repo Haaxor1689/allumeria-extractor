@@ -4,6 +4,46 @@ using System.Text.Json;
 
 internal static class ExporterUtils
 {
+  public static void NormalizeMissingSprites(IEnumerable<object> entries, string sourceDirectory, string fallbackSprite)
+  {
+    if (!Directory.Exists(sourceDirectory))
+      return;
+
+    foreach (var entry in entries)
+    {
+      if (entry is not IDictionary<string, object?> dictionary)
+        continue;
+
+      var hasExplicitSprite =
+        dictionary.TryGetValue("sprite", out var spriteValue) && !string.IsNullOrWhiteSpace(spriteValue?.ToString());
+
+      var sprite = hasExplicitSprite ? spriteValue!.ToString() : null;
+      if (!hasExplicitSprite)
+      {
+        // Block items without an explicit sprite implicitly use their item id as the sprite id.
+        var hasBlock = dictionary.TryGetValue("block", out var blockValue) && !string.IsNullOrWhiteSpace(blockValue?.ToString());
+        var hasItemTexture =
+          dictionary.TryGetValue("itemTexture", out var itemTextureValue)
+          && !string.IsNullOrWhiteSpace(itemTextureValue?.ToString());
+
+        if (!hasBlock || hasItemTexture)
+          continue;
+
+        if (!dictionary.TryGetValue("id", out var idValue))
+          continue;
+
+        sprite = idValue?.ToString();
+      }
+
+      if (string.IsNullOrWhiteSpace(sprite) || sprite.Equals(fallbackSprite, StringComparison.OrdinalIgnoreCase))
+        continue;
+
+      var sourcePath = Path.Combine(sourceDirectory, $"{sprite}.png");
+      if (!File.Exists(sourcePath))
+        dictionary["sprite"] = fallbackSprite;
+    }
+  }
+
   public static T RunWithProgress<T>(string label, Func<T> action, Func<T, string>? resultSummary = null)
   {
     var stopwatch = Stopwatch.StartNew();
