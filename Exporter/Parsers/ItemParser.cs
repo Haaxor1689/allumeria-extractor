@@ -13,6 +13,7 @@ internal static class ItemParser
     var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var itemEntriesById = BuildEntryMap(items);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
+    var ammoTypeNames = ReadAmmoTypeNames(sourceRoot);
 
     foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
@@ -37,7 +38,11 @@ internal static class ItemParser
           .Select(inv => new
           {
             key = SyntaxParsingUtils.TryReadQualifiedMemberArg(inv, 0, "ItemTag"),
-            value = TryReadExpressionArg(inv, 1) ?? true,
+            value = NormalizeTagValue(
+              SyntaxParsingUtils.TryReadQualifiedMemberArg(inv, 0, "ItemTag"),
+              TryReadExpressionArg(inv, 1) ?? true,
+              ammoTypeNames
+            ),
           })
           .Where(entry => !string.IsNullOrWhiteSpace(entry.key))
           .GroupBy(entry => entry.key!, StringComparer.OrdinalIgnoreCase)
@@ -151,11 +156,10 @@ internal static class ItemParser
       if (hidden)
         continue;
 
-      var derivedCategories = new List<string> { "all" };
+      var derivedCategories = new List<string> { };
 
       var hasBlock =
-        entry.TryGetValue("block", out var blockValue)
-        && !string.IsNullOrWhiteSpace(blockValue?.ToString());
+        entry.TryGetValue("block", out var blockValue) && !string.IsNullOrWhiteSpace(blockValue?.ToString());
       derivedCategories.Add(hasBlock ? "blocks" : "items");
 
       var hasMeleeDamage = HasTag(entry, "melee_damage");
@@ -368,6 +372,81 @@ internal static class ItemParser
       return null;
 
     return TryParseLiteralLikeValue(invocation.ArgumentList.Arguments[argumentIndex].Expression);
+  }
+
+  private static object? NormalizeTagValue(string? tagKey, object? value, IReadOnlyList<string> ammoTypeNames)
+  {
+    if (!string.Equals(tagKey, "ammo", StringComparison.OrdinalIgnoreCase) || value is null)
+      return value;
+
+    if (!TryReadInt(value, out var ammoIndex))
+      return value;
+
+    if (ammoIndex < 0 || ammoIndex >= ammoTypeNames.Count)
+      return value;
+
+    var ammoTypeName = ammoTypeNames[ammoIndex];
+    return string.IsNullOrWhiteSpace(ammoTypeName) ? value : ammoTypeName;
+  }
+
+  private static IReadOnlyList<string> ReadAmmoTypeNames(string sourceRoot)
+  {
+    var path = Path.Combine(sourceRoot, "Items", "ItemTypes", "ItemAmmo.cs");
+    if (!File.Exists(path))
+      return [];
+
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
+    var field = root
+      .DescendantNodes()
+      .OfType<FieldDeclarationSyntax>()
+      .FirstOrDefault(f => f.Declaration.Variables.Any(v => v.Identifier.Text == "ammoTypeNames"));
+
+    if (field is null)
+      return [];
+
+    var variable = field.Declaration.Variables.FirstOrDefault(v => v.Identifier.Text == "ammoTypeNames");
+    var initializer = variable?.Initializer?.Value;
+    if (initializer is null)
+      return [];
+
+    var arrayValues = initializer
+      .DescendantNodesAndSelf()
+      .OfType<InitializerExpressionSyntax>()
+      .SelectMany(i => i.Expressions)
+      .OfType<LiteralExpressionSyntax>()
+      .Where(l => l.Token.Value is string)
+      .Select(l => l.Token.ValueText)
+      .Where(value => !string.IsNullOrWhiteSpace(value))
+      .ToArray();
+
+    return arrayValues;
+  }
+
+  private static bool TryReadInt(object value, out int result)
+  {
+    switch (value)
+    {
+      case int intValue:
+        result = intValue;
+        return true;
+      case long longValue when longValue >= int.MinValue && longValue <= int.MaxValue:
+        result = (int)longValue;
+        return true;
+      case float floatValue when floatValue >= int.MinValue && floatValue <= int.MaxValue && floatValue % 1 == 0:
+        result = (int)floatValue;
+        return true;
+      case double doubleValue
+        when doubleValue >= int.MinValue && doubleValue <= int.MaxValue && Math.Abs(doubleValue % 1) < double.Epsilon:
+        result = (int)doubleValue;
+        return true;
+      case decimal decimalValue
+        when decimalValue >= int.MinValue && decimalValue <= int.MaxValue && decimalValue % 1 == 0:
+        result = (int)decimalValue;
+        return true;
+      default:
+        result = 0;
+        return false;
+    }
   }
 
   private static object? TryParseLiteralLikeValue(ExpressionSyntax expression)

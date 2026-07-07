@@ -28,7 +28,7 @@ internal static class ExporterUtils
   public static void WriteJson<T>(string path, T payload, JsonSerializerOptions jsonOptions)
   {
     var json = JsonSerializer.Serialize(payload, jsonOptions);
-    File.WriteAllText(path, json, Encoding.UTF8);
+    File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
   }
 
   public static int? ParseTranslationsToJson(

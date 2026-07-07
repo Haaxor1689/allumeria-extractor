@@ -5,7 +5,12 @@ using SixLabors.ImageSharp.Processing;
 
 internal static class TextureExportUtils
 {
-  public static int CopyTextures(IEnumerable<object> entries, string sourceDirectory, string destinationDirectory)
+  public static int CopyTextures(
+    IEnumerable<object> entries,
+    string sourceDirectory,
+    string destinationDirectory,
+    IEnumerable<string>? extraTextureIds = null
+  )
   {
     if (!Directory.Exists(sourceDirectory))
       return 0;
@@ -13,8 +18,9 @@ internal static class TextureExportUtils
     Directory.CreateDirectory(destinationDirectory);
 
     var copiedCount = 0;
+    var missingIds = new List<string>();
 
-    foreach (var id in ExtractIds(entries))
+    foreach (var (id, optional) in ExtractIds(entries, extraTextureIds))
     {
       string? sourcePath = null;
 
@@ -23,12 +29,23 @@ internal static class TextureExportUtils
         sourcePath = candidate;
 
       if (sourcePath is null)
+      {
+        if (!optional)
+          missingIds.Add(id);
         continue;
+      }
 
       var destinationPath = Path.Combine(destinationDirectory, $"{id}.webp");
       using var image = Image.Load(sourcePath);
       image.Save(destinationPath, new WebpEncoder());
       copiedCount++;
+    }
+
+    if (missingIds.Count > 0)
+    {
+      Console.WriteLine($"  Missing textures ({missingIds.Count}):");
+      foreach (var id in missingIds)
+        Console.WriteLine($"    - {id}");
     }
 
     return copiedCount;
@@ -101,24 +118,43 @@ internal static class TextureExportUtils
     return true;
   }
 
-  private static IEnumerable<string> ExtractIds(IEnumerable<object> entries)
+  private static IEnumerable<(string Id, bool Optional)> ExtractIds(IEnumerable<object> entries, IEnumerable<string>? extraTextureIds)
   {
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    if (extraTextureIds is not null)
+    {
+      foreach (var extraId in extraTextureIds)
+      {
+        if (string.IsNullOrWhiteSpace(extraId))
+          continue;
+
+        if (seen.Add(extraId))
+          yield return (extraId, false);
+      }
+    }
 
     foreach (var entry in entries)
     {
       if (entry is not IDictionary<string, object?> dictionary)
         continue;
 
-      if (!dictionary.TryGetValue("id", out var idValue))
-        continue;
+      var hasSprite = dictionary.TryGetValue("sprite", out var spriteValue)
+        && !string.IsNullOrWhiteSpace(spriteValue?.ToString());
 
-      var id = idValue?.ToString();
-      if (string.IsNullOrWhiteSpace(id))
-        continue;
+      if (dictionary.TryGetValue("id", out var idValue))
+      {
+        var id = idValue?.ToString();
+        if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
+          yield return (id, hasSprite);
+      }
 
-      if (seen.Add(id))
-        yield return id;
+      if (hasSprite)
+      {
+        var sprite = spriteValue!.ToString()!;
+        if (seen.Add(sprite))
+          yield return (sprite, false);
+      }
     }
   }
 }

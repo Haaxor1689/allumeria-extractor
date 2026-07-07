@@ -60,6 +60,11 @@ var effects = ExporterUtils.RunWithProgress(
   () => EffectParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
+var itemTags = ExporterUtils.RunWithProgress(
+  "Parsing item tags",
+  () => ItemTagParser.Parse(sourceRoot),
+  result => $"{result.Count} records"
+);
 var gameVersion = ExporterUtils.RunWithProgress("Parsing game version", () => GameVersionParser.Parse(sourceRoot));
 
 Console.WriteLine("[3/5] Exporting textures...");
@@ -96,6 +101,8 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["input"] = (336, 16, 16, 16, "ui"),
   ["input_hover"] = (352, 16, 16, 16, "ui"),
   ["input_active"] = (368, 16, 16, 16, "ui"),
+  ["scroll_thumb"] = (96, 16, 16, 16, "ui"),
+  ["scroll_track"] = (112, 16, 16, 16, "ui"),
   ["slot_hover"] = (223, 47, 18, 18, "icons"),
   ["slot_favourite"] = (255, 95, 18, 18, "icons"),
   ["slot_empty"] = (191, 47, 18, 18, "icons"),
@@ -124,21 +131,13 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["heart_three_quarters"] = (34, 66, 11, 10, "icons"),
   ["heart_full"] = (50, 66, 11, 10, "icons"),
   ["heart_empty"] = (66, 66, 11, 10, "icons"),
-  ["tooltip_ranged"] = (0, 320, 8, 8, "icons"),
-  ["tooltip_melee"] = (8, 320, 8, 8, "icons"),
-  ["tooltip_defence"] = (16, 320, 8, 8, "icons"),
-  ["tooltip_cooldown"] = (24, 320, 8, 8, "icons"),
-  ["tooltip_trinket"] = (32, 320, 8, 8, "icons"),
-  ["tooltip_heal"] = (40, 320, 8, 8, "icons"),
-  ["tooltip_placeable"] = (48, 320, 8, 8, "icons"),
-  ["tooltip_consumable"] = (56, 320, 8, 8, "icons"),
-  ["tooltip_pickaxe"] = (64, 320, 8, 8, "icons"),
-  ["tooltip_axe"] = (72, 320, 8, 8, "icons"),
-  ["tooltip_arrow"] = (80, 320, 8, 8, "icons"),
-  ["tooltip_smile"] = (88, 320, 8, 8, "icons"),
-  ["tooltip_block"] = (96, 320, 8, 8, "icons"),
-  ["tooltip_knockback"] = (104, 320, 8, 8, "icons"),
-  ["tooltip_locked"] = (112, 320, 8, 8, "icons"),
+  ["category_blocks"] = (21, 352, 6, 6, "icons"),
+  ["category_tools"] = (37, 352, 6, 6, "icons"),
+  ["category_technical"] = (53, 352, 6, 6, "icons"),
+  ["category_weapons"] = (69, 352, 6, 6, "icons"),
+  ["category_natural"] = (85, 352, 6, 6, "icons"),
+  ["category_items"] = (101, 352, 6, 6, "icons"),
+  ["category_decoration"] = (165, 352, 6, 6, "icons"),
 };
 
 foreach (var effect in effects)
@@ -165,23 +164,34 @@ foreach (var effect in effects)
   uiTextureAtlas[effectTextureName] = (textureX, textureY, 16, 16, "effects");
 }
 
+foreach (var itemTag in itemTags)
+{
+  if (
+    itemTag is not IDictionary<string, object?> itemTagData
+    || !itemTagData.TryGetValue("iconX", out var iconXValue)
+    || !itemTagData.TryGetValue("iconY", out var iconYValue)
+    || iconXValue is null
+    || iconYValue is null
+  )
+  {
+    continue;
+  }
+
+  if (!TryReadInt32(iconXValue, out var iconX) || !TryReadInt32(iconYValue, out var iconY))
+    continue;
+
+  var tagTextureName = $"{iconX}x{iconY}";
+  uiTextureAtlas[tagTextureName] = (iconX, iconY, 8, 8, "item_tags");
+}
+
 var copiedItemTextures = ExporterUtils.RunWithProgress(
   "Converting item textures to WEBP",
   () =>
     TextureExportUtils.CopyTextures(
       entries: items,
       sourceDirectory: Path.Combine(assetsRoot, "textures", "atlas", "items"),
-      destinationDirectory: Path.Combine(outputRoot, "assets", "items")
-    ),
-  result => $"{result} copied"
-);
-var copiedBlockTextures = ExporterUtils.RunWithProgress(
-  "Converting block textures to WEBP",
-  () =>
-    TextureExportUtils.CopyTextures(
-      entries: blocks,
-      sourceDirectory: Path.Combine(assetsRoot, "textures", "atlas", "items"),
-      destinationDirectory: Path.Combine(outputRoot, "assets", "blocks")
+      destinationDirectory: Path.Combine(outputRoot, "assets", "items"),
+      extraTextureIds: ["missing"]
     ),
   result => $"{result} copied"
 );
@@ -207,6 +217,7 @@ var summary = new
   lootCount = loots.Count,
   spawnCount = spawns.Count,
   effectCount = effects.Count,
+  itemTagCount = itemTags.Count,
 };
 
 var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
@@ -254,6 +265,10 @@ ExporterUtils.RunActionWithProgress(
   () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "effects.json"), effects, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
+  "Writing item_tags.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "item_tags.json"), itemTags, jsonOptions)
+);
+ExporterUtils.RunActionWithProgress(
   "Writing summary.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "summary.json"), summary, jsonOptions)
 );
@@ -262,10 +277,9 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Recipes: {recipes.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}"
+  $"Items: {items.Count}, Recipes: {recipes.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
-Console.WriteLine($"Converted block textures to WEBP: {copiedBlockTextures}");
 Console.WriteLine(
   $"Sliced UI atlas textures to WEBP: {string.Join(", ", slicedUiTextures.Select(kv => $"{kv.Key}: {kv.Value}"))}"
 );
