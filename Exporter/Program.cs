@@ -40,6 +40,11 @@ var recipes = ExporterUtils.RunWithProgress(
   () => RecipeParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
+var recipeAliases = ExporterUtils.RunWithProgress(
+  "Parsing recipe aliases",
+  () => RecipeAliasParser.Parse(sourceRoot),
+  result => $"{result.Count} records"
+);
 var creatures = ExporterUtils.RunWithProgress(
   "Parsing creatures",
   () => CreatureParser.Parse(sourceRoot),
@@ -213,6 +218,7 @@ var summary = new
   gameVersion,
   itemCount = items.Count,
   recipeCount = recipes.Count,
+  recipeAliasCount = recipeAliases.Count,
   blockCount = blocks.Count,
   creatureCount = creatures.Count,
   lootCount = loots.Count,
@@ -247,6 +253,10 @@ ExporterUtils.RunActionWithProgress(
   () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "recipes.json"), recipes, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
+  "Writing recipe_aliases.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "recipe_aliases.json"), recipeAliases, jsonOptions)
+);
+ExporterUtils.RunActionWithProgress(
   "Writing blocks.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "blocks.json"), blocks, jsonOptions)
 );
@@ -279,7 +289,7 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Recipes: {recipes.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}"
+  $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
 Console.WriteLine(

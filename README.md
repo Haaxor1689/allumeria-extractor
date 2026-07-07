@@ -2,6 +2,8 @@
 
 Allumeria Exporter is a .NET CLI tool that parses decompiled Allumeria source code and game assets, then writes structured JSON and WEBP assets for downstream use.
 
+The exported data and assets are used by the Next.js Allumeria DB site: [Haaxor1689/allumeria-db](https://github.com/Haaxor1689/allumeria-db).
+
 You can find the game on [Steam](https://store.steampowered.com/app/3516590/Allumeria/) or check out [the official website](https://allumeria.com/) for more links.
 
 ## Prerequisites
