@@ -42,11 +42,9 @@ internal static class RecipeAliasParser
         aliasEntries.Reverse();
         aliasEntries = aliasEntries.Distinct(StringComparer.Ordinal).ToList();
 
-        entries.Add(new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-          ["id"] = id,
-          ["entries"] = aliasEntries,
-        });
+        entries.Add(
+          new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id, ["entries"] = aliasEntries }
+        );
       }
     }
 
