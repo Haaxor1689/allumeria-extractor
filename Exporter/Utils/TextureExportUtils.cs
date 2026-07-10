@@ -5,11 +5,10 @@ using SixLabors.ImageSharp.Processing;
 
 internal static class TextureExportUtils
 {
-  public static int CopyTextures(
-    IEnumerable<object> entries,
+  public static int CopyTexturesById(
+    IEnumerable<string> textureIds,
     string sourceDirectory,
-    string destinationDirectory,
-    IEnumerable<string>? extraTextureIds = null
+    string destinationDirectory
   )
   {
     if (!Directory.Exists(sourceDirectory))
@@ -18,34 +17,21 @@ internal static class TextureExportUtils
     Directory.CreateDirectory(destinationDirectory);
 
     var copiedCount = 0;
-    var missingIds = new List<string>();
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var (id, optional) in ExtractIds(entries, extraTextureIds))
+    foreach (var textureId in textureIds)
     {
-      string? sourcePath = null;
-
-      var candidate = Path.Combine(sourceDirectory, $"{id}.png");
-      if (File.Exists(candidate))
-        sourcePath = candidate;
-
-      if (sourcePath is null)
-      {
-        if (!optional)
-          missingIds.Add(id);
+      if (string.IsNullOrWhiteSpace(textureId) || !seen.Add(textureId))
         continue;
-      }
 
-      var destinationPath = Path.Combine(destinationDirectory, $"{id}.webp");
+      var sourcePath = Path.Combine(sourceDirectory, $"{textureId}.png");
+      if (!File.Exists(sourcePath))
+        continue;
+
+      var destinationPath = Path.Combine(destinationDirectory, $"{textureId}.webp");
       using var image = Image.Load(sourcePath);
       image.Save(destinationPath, new WebpEncoder());
       copiedCount++;
-    }
-
-    if (missingIds.Count > 0)
-    {
-      Console.WriteLine($"  Missing textures ({missingIds.Count}):");
-      foreach (var id in missingIds)
-        Console.WriteLine($"    - {id}");
     }
 
     return copiedCount;
@@ -116,48 +102,5 @@ internal static class TextureExportUtils
     }
 
     return true;
-  }
-
-  private static IEnumerable<(string Id, bool Optional)> ExtractIds(
-    IEnumerable<object> entries,
-    IEnumerable<string>? extraTextureIds
-  )
-  {
-    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-    if (extraTextureIds is not null)
-    {
-      foreach (var extraId in extraTextureIds)
-      {
-        if (string.IsNullOrWhiteSpace(extraId))
-          continue;
-
-        if (seen.Add(extraId))
-          yield return (extraId, false);
-      }
-    }
-
-    foreach (var entry in entries)
-    {
-      if (entry is not IDictionary<string, object?> dictionary)
-        continue;
-
-      var hasSprite =
-        dictionary.TryGetValue("sprite", out var spriteValue) && !string.IsNullOrWhiteSpace(spriteValue?.ToString());
-
-      if (dictionary.TryGetValue("id", out var idValue))
-      {
-        var id = idValue?.ToString();
-        if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
-          yield return (id, hasSprite);
-      }
-
-      if (hasSprite)
-      {
-        var sprite = spriteValue!.ToString()!;
-        if (seen.Add(sprite))
-          yield return (sprite, false);
-      }
-    }
   }
 }

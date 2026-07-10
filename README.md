@@ -67,6 +67,7 @@ Data files (in `output/data/`):
 - `loot.json`
 - `spawn.json`
 - `effects.json`
+- `block_models.json`
 - `translations.json`
 - `summary.json`
 
