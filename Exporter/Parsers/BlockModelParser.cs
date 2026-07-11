@@ -24,6 +24,7 @@ internal static class BlockModelParser
       var root = SyntaxParsingUtils.ParseCompilationUnit(file);
       var numericSymbols = BuildNumericSymbolMap(root);
       numericSymbolsByFile[file] = numericSymbols;
+      var matrixSymbols = BuildMatrixSymbolMap(root, numericSymbols);
 
       foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
       {
@@ -42,9 +43,9 @@ internal static class BlockModelParser
           var sourceType = ctor?.Type.ToString() ?? declaredType;
           var typeName = NormalizeTypeName(sourceType);
 
-          var meshes = BuildMeshesFromInitializer(initializer, numericSymbols);
+          var meshes = BuildMeshesFromInitializer(initializer, numericSymbols, matrixSymbols);
           if (meshes.Count == 0 && IsDefaultCubeType(typeName))
-            meshes = BuildDefaultCubeMeshes();
+            meshes = BuildDefaultCubeMeshes(typeName);
 
           if (multiBlockModelModes.TryGetValue(id, out var multiBlockMode) && multiBlockMode != MultiBlockMode.None)
             meshes = MergeSecondBlockIntoMeshes(meshes, multiBlockMode);
@@ -66,7 +67,8 @@ internal static class BlockModelParser
 
   private static List<object> BuildMeshesFromInitializer(
     ExpressionSyntax? initializer,
-    IDictionary<string, double> symbols
+    IDictionary<string, double> symbols,
+    IReadOnlyDictionary<string, double[]> matrixSymbols
   )
   {
     if (initializer is null)
@@ -81,7 +83,7 @@ internal static class BlockModelParser
       var name = SyntaxParsingUtils.GetInvocationName(invocation);
       if (name == "AddCuboid")
       {
-        var cuboid = TryParseCuboidArgument(invocation, symbols);
+        var cuboid = TryParseCuboidArgument(invocation, symbols, matrixSymbols);
         if (cuboid is null)
           continue;
 
@@ -91,7 +93,7 @@ internal static class BlockModelParser
       }
       else if (name == "AddQuad")
       {
-        if (TryParseQuadInvocation(invocation, symbols, out var quad))
+        if (TryParseQuadInvocation(invocation, symbols, matrixSymbols, out var quad))
         {
           quad["order"] = order++;
           parts.Add(quad);
@@ -160,7 +162,11 @@ internal static class BlockModelParser
     if (part.TryGetValue("uvs", out var uvsObj) && uvsObj is double[] uvs)
       uvKey = string.Join(",", uvs.Select(Round));
 
-    return $"{flag}:{normal}:{textureIndex}:{uvKey}:{geometryKey}";
+    var matrixKey = string.Empty;
+    if (part.TryGetValue("matrix", out var matrixObj) && matrixObj is double[][] matrix)
+      matrixKey = string.Join("|", matrix.Select(row => string.Join(",", row.Select(Round))));
+
+    return $"{flag}:{normal}:{textureIndex}:{uvKey}:{matrixKey}:{geometryKey}";
   }
 
   private static string FormatVector(double[] vector)
@@ -168,7 +174,7 @@ internal static class BlockModelParser
     return $"{Round(vector[0])},{Round(vector[1])},{Round(vector[2])}";
   }
 
-  private static List<object> BuildDefaultCubeMeshes()
+  private static List<object> BuildDefaultCubeMeshes(string typeName)
   {
     var cuboid = new CuboidDef
     {
@@ -182,12 +188,31 @@ internal static class BlockModelParser
       Flag = 0,
       IgnorePaint = false,
       NoNormals = false,
-      TextureIndices = [0, 0, 0, 0, 0, 0],
+      TextureIndices = GetDefaultCubeTextureIndices(typeName),
     };
 
     var part = CreateCuboidPart(cuboid);
     part["order"] = 0;
     return BuildMeshesFromParts([part]);
+  }
+
+  private static int[] GetDefaultCubeTextureIndices(string typeName)
+  {
+    if (string.Equals(typeName, "TopBottom", StringComparison.OrdinalIgnoreCase))
+    {
+      // Cuboid face order is top, bottom, +X, -X, +Z, -Z.
+      // BlockModelTopBottom uses textures [top, side, bottom].
+      return [0, 2, 1, 1, 1, 1];
+    }
+
+    if (string.Equals(typeName, "SixSided", StringComparison.OrdinalIgnoreCase))
+    {
+      // Cuboid face order is top, bottom, +X, -X, +Z, -Z.
+      // BlockModelSixSided maps textures as +Z, -Z, +X, -X, +Y, -Y.
+      return [4, 5, 2, 3, 0, 1];
+    }
+
+    return [0, 0, 0, 0, 0, 0];
   }
 
   private static List<object> BuildMeshesFromParts(IEnumerable<Dictionary<string, object?>> parts)
@@ -231,6 +256,9 @@ internal static class BlockModelParser
     if (!AreAllZero(uvOffsets))
       part["uvOffsets"] = uvOffsets;
 
+    if (cuboid.Matrix is { Length: 16 })
+      part["matrix"] = SerializeMatrix(cuboid.Matrix);
+
     return part;
   }
 
@@ -252,7 +280,8 @@ internal static class BlockModelParser
     int normal,
     int textureIndex,
     int flag,
-    string source
+    string source,
+    double[]? matrix
   )
   {
     var part = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -279,12 +308,16 @@ internal static class BlockModelParser
       };
     }
 
+    if (matrix is { Length: 16 })
+      part["matrix"] = SerializeMatrix(matrix);
+
     return part;
   }
 
   private static bool TryParseQuadInvocation(
     InvocationExpressionSyntax invocation,
     IDictionary<string, double> symbols,
+    IReadOnlyDictionary<string, double[]> matrixSymbols,
     out Dictionary<string, object?> quad
   )
   {
@@ -312,26 +345,33 @@ internal static class BlockModelParser
 
     var flag = ReadIntArgument(argMap, 4, "flag", symbols, 0);
     var textureIndex = ReadIntArgument(argMap, 5, "textureIndex", symbols, 0);
+    var matrix = ReadMatrixArgument(invocation.ArgumentList, 3, "matrix", symbols, matrixSymbols);
     var normalized = vertices.Select(vector => new[] { vector[0] / 16d, vector[1] / 16d, vector[2] / 16d }).ToArray();
 
-    quad = CreateQuadPart(normalized, faceUv, normal, textureIndex, flag, "quad");
+    quad = CreateQuadPart(normalized, faceUv, normal, textureIndex, flag, "quad", matrix);
     return true;
   }
 
   private static CuboidDef? TryParseCuboidArgument(
     InvocationExpressionSyntax invocation,
-    IDictionary<string, double> symbols
+    IDictionary<string, double> symbols,
+    IReadOnlyDictionary<string, double[]> matrixSymbols
   )
   {
-    var argMap = BuildArgumentMap(invocation);
-    if (!TryGetArgument(argMap, 0, "cuboid", out var cuboidExpression))
+    var invocationArgMap = BuildArgumentMap(invocation);
+    if (!TryGetArgument(invocationArgMap, 0, "cuboid", out var cuboidExpression))
       return null;
 
     var cuboidCreation = Unwrap(cuboidExpression) as ObjectCreationExpressionSyntax;
     if (cuboidCreation is null || !cuboidCreation.Type.ToString().Contains("Cuboid", StringComparison.Ordinal))
       return null;
 
-    return ParseCuboidDefinition(cuboidCreation, symbols);
+    var cuboid = ParseCuboidDefinition(cuboidCreation, symbols);
+    if (cuboid is null)
+      return null;
+
+    cuboid.Matrix = ReadMatrixArgument(invocation.ArgumentList, 1, "matrix", symbols, matrixSymbols);
+    return cuboid;
   }
 
   private static CuboidDef? ParseCuboidDefinition(
@@ -416,6 +456,33 @@ internal static class BlockModelParser
 
         if (TryEvaluateDouble(initializer, map, out var value))
           map[variable.Identifier.Text] = value;
+      }
+    }
+
+    return map;
+  }
+
+  private static IReadOnlyDictionary<string, double[]> BuildMatrixSymbolMap(
+    CompilationUnitSyntax root,
+    IDictionary<string, double> numericSymbols
+  )
+  {
+    var map = new Dictionary<string, double[]>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
+    {
+      var declaredType = field.Declaration.Type.ToString();
+      if (!declaredType.Contains("Matrix4", StringComparison.Ordinal))
+        continue;
+
+      foreach (var variable in field.Declaration.Variables)
+      {
+        var initializer = variable.Initializer?.Value;
+        if (initializer is null)
+          continue;
+
+        if (TryEvaluateMatrix(initializer, numericSymbols, map, out var matrix))
+          map[variable.Identifier.Text] = matrix;
       }
     }
 
@@ -817,6 +884,243 @@ internal static class BlockModelParser
     return map.TryGetValue(key, out var value) && value is int intValue ? intValue : 0;
   }
 
+  private static double[]? ReadMatrixArgument(
+    ArgumentListSyntax? argumentList,
+    int position,
+    string name,
+    IDictionary<string, double> numericSymbols,
+    IReadOnlyDictionary<string, double[]> matrixSymbols
+  )
+  {
+    if (!TryGetOptionalArgument(argumentList, position, name, out var expression))
+      return null;
+
+    var reduced = Unwrap(expression);
+    if (IsDefaultMatrixExpression(reduced))
+      return null;
+
+    return TryEvaluateMatrix(reduced, numericSymbols, matrixSymbols, out var matrix) ? matrix : null;
+  }
+
+  private static bool IsDefaultMatrixExpression(ExpressionSyntax expression)
+  {
+    if (expression is DefaultExpressionSyntax defaultExpression)
+      return defaultExpression.Type.ToString().Contains("Matrix4", StringComparison.Ordinal);
+
+    if (
+      expression is ObjectCreationExpressionSyntax creation
+      && creation.Type.ToString().Contains("Matrix4", StringComparison.Ordinal)
+      && (creation.ArgumentList is null || creation.ArgumentList.Arguments.Count == 0)
+    )
+    {
+      return true;
+    }
+
+    if (expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.DefaultLiteralExpression))
+      return true;
+
+    return false;
+  }
+
+  private static bool TryEvaluateMatrix(
+    ExpressionSyntax expression,
+    IDictionary<string, double> numericSymbols,
+    IReadOnlyDictionary<string, double[]> matrixSymbols,
+    out double[] matrix
+  )
+  {
+    matrix = ZeroMatrix();
+
+    var reduced = Unwrap(expression);
+    if (IsDefaultMatrixExpression(reduced))
+      return false;
+
+    if (
+      reduced is IdentifierNameSyntax identifier
+      && matrixSymbols.TryGetValue(identifier.Identifier.Text, out var named)
+    )
+    {
+      matrix = (double[])named.Clone();
+      return true;
+    }
+
+    if (
+      reduced is MemberAccessExpressionSyntax member
+      && matrixSymbols.TryGetValue(member.Name.Identifier.Text, out var memberMatrix)
+    )
+    {
+      matrix = (double[])memberMatrix.Clone();
+      return true;
+    }
+
+    if (reduced is BinaryExpressionSyntax binary && binary.Kind() == SyntaxKind.MultiplyExpression)
+    {
+      if (
+        TryEvaluateMatrix(binary.Left, numericSymbols, matrixSymbols, out var left)
+        && TryEvaluateMatrix(binary.Right, numericSymbols, matrixSymbols, out var right)
+      )
+      {
+        matrix = MultiplyMatrices(left, right);
+        return true;
+      }
+
+      return false;
+    }
+
+    if (reduced is not InvocationExpressionSyntax invocation)
+      return false;
+
+    if (invocation.Expression is not MemberAccessExpressionSyntax invocationMember)
+      return false;
+
+    if (!invocationMember.Expression.ToString().EndsWith("Matrix4", StringComparison.Ordinal))
+      return false;
+
+    var name = invocationMember.Name.Identifier.Text;
+    var args = invocation.ArgumentList.Arguments;
+
+    switch (name)
+    {
+      case "CreateTranslation":
+        if (args.Count == 1 && TryParseVector3Expression(args[0].Expression, numericSymbols, out var translation))
+        {
+          matrix = CreateTranslationMatrix(translation[0], translation[1], translation[2]);
+          return true;
+        }
+        break;
+
+      case "CreateRotationX":
+        if (args.Count >= 1 && TryEvaluateDouble(args[0].Expression, numericSymbols, out var rx))
+        {
+          matrix = CreateRotationXMatrix(rx);
+          return true;
+        }
+        break;
+
+      case "CreateRotationY":
+        if (args.Count >= 1 && TryEvaluateDouble(args[0].Expression, numericSymbols, out var ry))
+        {
+          matrix = CreateRotationYMatrix(ry);
+          return true;
+        }
+        break;
+
+      case "CreateRotationZ":
+        if (args.Count >= 1 && TryEvaluateDouble(args[0].Expression, numericSymbols, out var rz))
+        {
+          matrix = CreateRotationZMatrix(rz);
+          return true;
+        }
+        break;
+    }
+
+    return false;
+  }
+
+  private static bool TryGetOptionalArgument(
+    ArgumentListSyntax? argumentList,
+    int position,
+    string name,
+    out ExpressionSyntax expression
+  )
+  {
+    expression = null!;
+    if (argumentList is null)
+      return false;
+
+    foreach (var argument in argumentList.Arguments)
+    {
+      if (argument.NameColon is null)
+        continue;
+
+      if (!string.Equals(argument.NameColon.Name.Identifier.Text, name, StringComparison.OrdinalIgnoreCase))
+        continue;
+
+      expression = argument.Expression;
+      return true;
+    }
+
+    if (argumentList.Arguments.Count <= position)
+      return false;
+
+    var positional = argumentList.Arguments[position];
+    if (positional.NameColon is not null)
+      return false;
+
+    expression = positional.Expression;
+    return true;
+  }
+
+  private static double[][] SerializeMatrix(IReadOnlyList<double> matrix)
+  {
+    return
+    [
+      [Round(matrix[0]), Round(matrix[1]), Round(matrix[2]), Round(matrix[3])],
+      [Round(matrix[4]), Round(matrix[5]), Round(matrix[6]), Round(matrix[7])],
+      [Round(matrix[8]), Round(matrix[9]), Round(matrix[10]), Round(matrix[11])],
+      [Round(matrix[12]), Round(matrix[13]), Round(matrix[14]), Round(matrix[15])],
+    ];
+  }
+
+  private static double[] ZeroMatrix()
+  {
+    return new double[16];
+  }
+
+  private static double[] IdentityMatrix()
+  {
+    return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  }
+
+  private static double[] CreateTranslationMatrix(double x, double y, double z)
+  {
+    var matrix = IdentityMatrix();
+    matrix[12] = x;
+    matrix[13] = y;
+    matrix[14] = z;
+    return matrix;
+  }
+
+  private static double[] CreateRotationXMatrix(double radians)
+  {
+    var cos = Math.Cos(radians);
+    var sin = Math.Sin(radians);
+    return [1, 0, 0, 0, 0, cos, sin, 0, 0, -sin, cos, 0, 0, 0, 0, 1];
+  }
+
+  private static double[] CreateRotationYMatrix(double radians)
+  {
+    var cos = Math.Cos(radians);
+    var sin = Math.Sin(radians);
+    return [cos, 0, -sin, 0, 0, 1, 0, 0, sin, 0, cos, 0, 0, 0, 0, 1];
+  }
+
+  private static double[] CreateRotationZMatrix(double radians)
+  {
+    var cos = Math.Cos(radians);
+    var sin = Math.Sin(radians);
+    return [cos, sin, 0, 0, -sin, cos, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  }
+
+  private static double[] MultiplyMatrices(IReadOnlyList<double> left, IReadOnlyList<double> right)
+  {
+    var result = new double[16];
+
+    for (var row = 0; row < 4; row++)
+    {
+      for (var column = 0; column < 4; column++)
+      {
+        var sum = 0d;
+        for (var k = 0; k < 4; k++)
+          sum += left[row * 4 + k] * right[k * 4 + column];
+
+        result[row * 4 + column] = sum;
+      }
+    }
+
+    return result;
+  }
+
   private static (int X, int Y) GetOffset(CuboidDef cuboid, int index)
   {
     if (cuboid.UvOffsets is null || index < 0 || index >= cuboid.UvOffsets.Length)
@@ -876,8 +1180,8 @@ internal static class BlockModelParser
 
   private static bool IsDefaultCubeType(string typeName)
   {
-    return string.Equals(typeName, "TopBottom", StringComparison.Ordinal)
-      || string.Equals(typeName, "SixSided", StringComparison.Ordinal)
+    return string.Equals(typeName, "TopBottom", StringComparison.OrdinalIgnoreCase)
+      || string.Equals(typeName, "SixSided", StringComparison.OrdinalIgnoreCase)
       || string.Equals(typeName, "", StringComparison.Ordinal);
   }
 
@@ -1091,6 +1395,7 @@ internal static class BlockModelParser
     public bool NoNormals { get; set; }
     public int[] TextureIndices { get; set; } = [0, 0, 0, 0, 0, 0];
     public (int X, int Y)[]? UvOffsets { get; set; }
+    public double[]? Matrix { get; set; }
   }
 
   private readonly record struct FaceUvDef(double UMin, double VMin, double UMax, double VMax);

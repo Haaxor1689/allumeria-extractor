@@ -242,7 +242,7 @@ var summary = new
   blockModelCount = blockModels.Count,
 };
 
-var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
 Console.WriteLine("[4/5] Parsing and writing translations...");
 

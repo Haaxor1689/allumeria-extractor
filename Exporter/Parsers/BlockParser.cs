@@ -11,6 +11,12 @@ internal static class BlockParser
 {
   private const string BlockTypesRelativePath = "Blocks\\Blocks";
 
+  private sealed class BlockTypeDefaults
+  {
+    public string? BaseTypeName { get; set; }
+    public Dictionary<string, object?> Attributes { get; } = new(StringComparer.OrdinalIgnoreCase);
+  }
+
   public static BlockParseResult Parse(string sourceRoot)
   {
     var path = Path.Combine(sourceRoot, "Blocks", "Blocks", "Block.cs");
@@ -25,6 +31,7 @@ internal static class BlockParser
     var itemIdsBySymbol = ReadItemIdsBySymbol(sourceRoot);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
     var defaultCraftingTypesByType = BuildDefaultCraftingTypeMap(sourceRoot);
+    var blockTypeDefaultsByType = BuildBlockTypeDefaultsMap(sourceRoot);
 
     foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
     {
@@ -42,7 +49,9 @@ internal static class BlockParser
         var symbol = variable.Identifier.Text;
         var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? symbol;
         var constructorType = ctor.Type.ToString();
+        var rawTypeName = constructorType.Split('.').Last().Trim();
         var typeName = NormalizeTypeName(constructorType);
+        var resolvedTypeDefaults = ResolveBlockTypeDefaults(rawTypeName, typeName, blockTypeDefaultsByType);
 
         var textureInvocation = invocations.LastOrDefault(inv =>
           SyntaxParsingUtils.GetInvocationName(inv) == "SetTexture"
@@ -105,6 +114,12 @@ internal static class BlockParser
 
         var sprite = TryReadExpressionArg(itemSpriteInvocation, 0) as string;
         var blockModel = TryReadExpressionArg(blockModelInvocation, 0) as string;
+        if (
+          string.IsNullOrWhiteSpace(blockModel)
+          && resolvedTypeDefaults.TryGetValue("blockModel", out var defaultBlockModel)
+        )
+          blockModel = defaultBlockModel as string;
+
         var standOnEffect = TryReadExpressionArg(setStandOnEffectInvocation, 0) as string;
         var craftingType = setCraftingTypeInvocation is null
           ? null
@@ -112,7 +127,6 @@ internal static class BlockParser
 
         if (string.IsNullOrWhiteSpace(craftingType))
         {
-          var rawTypeName = constructorType.Split('.').Last().Trim();
           if (!defaultCraftingTypesByType.TryGetValue(rawTypeName, out craftingType))
             defaultCraftingTypesByType.TryGetValue(typeName, out craftingType);
         }
@@ -125,12 +139,36 @@ internal static class BlockParser
         var lightEmission = TryReadIntTriple(setLightEmissionInvocation, 0, 1, 2);
 
         var hidden = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "Hide");
-        var solid = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeSolid");
-        var semiSolid = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeSemiSolid");
-        var transparent = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeTransparent");
+        var solid = GetDefaultBool(resolvedTypeDefaults, "solid") == true;
+        var semiSolid = GetDefaultBool(resolvedTypeDefaults, "semiSolid") == true;
+        var transparent = GetDefaultBool(resolvedTypeDefaults, "transparent") == true;
         var interactible = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeInteractible");
-        var needSupport = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeNeedSupport");
+        var needsSupport = GetDefaultBool(resolvedTypeDefaults, "needsSupport") == true;
         var canBeShaped = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "AutoGenVariants");
+        bool? blocksLight = GetDefaultBool(resolvedTypeDefaults, "blocksLight");
+
+        foreach (var invocation in invocations)
+        {
+          var invocationName = SyntaxParsingUtils.GetInvocationName(invocation);
+          switch (invocationName)
+          {
+            case "MakeSolid":
+              solid = true;
+              blocksLight = true;
+              break;
+            case "MakeSemiSolid":
+              solid = true;
+              semiSolid = true;
+              blocksLight = false;
+              break;
+            case "MakeTransparent":
+              transparent = true;
+              break;
+            case "MakeNeedSupport":
+              needsSupport = true;
+              break;
+          }
+        }
 
         var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
         var itemEntry = CreateDefaultItemEntry(id, sprite, sellValue);
@@ -162,8 +200,11 @@ internal static class BlockParser
         if (interactible)
           entry["interactible"] = true;
 
-        if (needSupport)
-          entry["needSupport"] = true;
+        if (needsSupport)
+          entry["needsSupport"] = true;
+
+        if (blocksLight.HasValue)
+          entry["blocksLight"] = blocksLight.Value;
 
         if (canBeShaped)
           entry["canBeShaped"] = true;
@@ -899,6 +940,181 @@ internal static class BlockParser
     }
 
     return map;
+  }
+
+  private static IReadOnlyDictionary<string, BlockTypeDefaults> BuildBlockTypeDefaultsMap(string sourceRoot)
+  {
+    var map = new Dictionary<string, BlockTypeDefaults>(StringComparer.OrdinalIgnoreCase);
+    var blockTypesRoot = Path.Combine(sourceRoot, BlockTypesRelativePath);
+
+    if (!Directory.Exists(blockTypesRoot))
+      return map;
+
+    foreach (var file in Directory.EnumerateFiles(blockTypesRoot, "*.cs", SearchOption.TopDirectoryOnly))
+    {
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
+
+      foreach (var declaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
+      {
+        var typeName = declaration.Identifier.Text;
+        if (string.IsNullOrWhiteSpace(typeName))
+          continue;
+
+        if (!map.TryGetValue(typeName, out var typeDefaults))
+        {
+          typeDefaults = new BlockTypeDefaults();
+          map[typeName] = typeDefaults;
+        }
+
+        if (declaration.BaseList?.Types.FirstOrDefault() is { } baseType)
+          typeDefaults.BaseTypeName = NormalizeTypeReferenceName(baseType.Type.ToString());
+
+        foreach (var constructor in declaration.Members.OfType<ConstructorDeclarationSyntax>())
+        {
+          if (constructor.Body is not null)
+          {
+            foreach (var statement in constructor.Body.Statements.OfType<ExpressionStatementSyntax>())
+            {
+              ApplyDefaultAssignment(typeDefaults.Attributes, statement.Expression);
+              ApplyDefaultInvocation(typeDefaults.Attributes, statement.Expression);
+            }
+          }
+
+          if (constructor.ExpressionBody is not null)
+          {
+            ApplyDefaultAssignment(typeDefaults.Attributes, constructor.ExpressionBody.Expression);
+            ApplyDefaultInvocation(typeDefaults.Attributes, constructor.ExpressionBody.Expression);
+          }
+        }
+      }
+    }
+
+    return map;
+  }
+
+  private static IReadOnlyDictionary<string, object?> ResolveBlockTypeDefaults(
+    string rawTypeName,
+    string normalizedTypeName,
+    IReadOnlyDictionary<string, BlockTypeDefaults> blockTypeDefaultsByType
+  )
+  {
+    var lookupTypeName = !string.IsNullOrWhiteSpace(rawTypeName) ? rawTypeName : normalizedTypeName;
+
+    if (string.IsNullOrWhiteSpace(lookupTypeName))
+      return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+    if (!blockTypeDefaultsByType.ContainsKey(lookupTypeName) && blockTypeDefaultsByType.ContainsKey(normalizedTypeName))
+      lookupTypeName = normalizedTypeName;
+
+    var resolved = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+    var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    MergeBlockTypeDefaults(lookupTypeName, blockTypeDefaultsByType, resolved, visited);
+    return resolved;
+  }
+
+  private static void MergeBlockTypeDefaults(
+    string typeName,
+    IReadOnlyDictionary<string, BlockTypeDefaults> blockTypeDefaultsByType,
+    IDictionary<string, object?> destination,
+    ISet<string> visited
+  )
+  {
+    if (!visited.Add(typeName))
+      return;
+
+    if (!blockTypeDefaultsByType.TryGetValue(typeName, out var typeDefaults))
+      return;
+
+    if (!string.IsNullOrWhiteSpace(typeDefaults.BaseTypeName))
+      MergeBlockTypeDefaults(typeDefaults.BaseTypeName!, blockTypeDefaultsByType, destination, visited);
+
+    foreach (var (key, value) in typeDefaults.Attributes)
+      destination[key] = value;
+  }
+
+  private static bool? GetDefaultBool(IReadOnlyDictionary<string, object?> values, string key)
+  {
+    return values.TryGetValue(key, out var raw) && raw is bool boolean ? boolean : null;
+  }
+
+  private static void ApplyDefaultAssignment(IDictionary<string, object?> attributes, ExpressionSyntax expression)
+  {
+    if (expression is not AssignmentExpressionSyntax assignment)
+      return;
+
+    var fieldName = TryReadAssignedFieldName(assignment.Left);
+    if (string.IsNullOrWhiteSpace(fieldName))
+      return;
+
+    if (TryReadBoolLiteral(assignment.Right) is not bool boolValue)
+      return;
+
+    var key = fieldName switch
+    {
+      "solid" => "solid",
+      "semisolid" => "semiSolid",
+      "transparent" => "transparent",
+      "blocksLight" => "blocksLight",
+      "needsSupport" => "needsSupport",
+      _ => null,
+    };
+
+    if (!string.IsNullOrWhiteSpace(key))
+      attributes[key!] = boolValue;
+  }
+
+  private static void ApplyDefaultInvocation(IDictionary<string, object?> attributes, ExpressionSyntax expression)
+  {
+    if (expression is not InvocationExpressionSyntax invocation)
+      return;
+
+    var invocationName = SyntaxParsingUtils.GetInvocationName(invocation);
+    switch (invocationName)
+    {
+      case "MakeSolid":
+        attributes["solid"] = true;
+        attributes["blocksLight"] = true;
+        break;
+      case "MakeSemiSolid":
+        attributes["solid"] = true;
+        attributes["semiSolid"] = true;
+        attributes["blocksLight"] = false;
+        break;
+      case "MakeTransparent":
+        attributes["transparent"] = true;
+        break;
+      case "MakeNeedSupport":
+        attributes["needsSupport"] = true;
+        break;
+      case "SetBlockModel":
+        if (TryReadExpressionArg(invocation, 0) is string blockModel && !string.IsNullOrWhiteSpace(blockModel))
+          attributes["blockModel"] = blockModel;
+        break;
+    }
+  }
+
+  private static string? TryReadAssignedFieldName(ExpressionSyntax expression)
+  {
+    var reduced = Unwrap(expression);
+
+    return reduced switch
+    {
+      IdentifierNameSyntax identifier => identifier.Identifier.Text,
+      MemberAccessExpressionSyntax memberAccess when memberAccess.Expression is ThisExpressionSyntax => memberAccess
+        .Name
+        .Identifier
+        .Text,
+      MemberAccessExpressionSyntax memberAccess when memberAccess.Expression is IdentifierNameSyntax => memberAccess
+        .Name
+        .Identifier
+        .Text,
+      _ => null,
+    };
+  }
+
+  private static string NormalizeTypeReferenceName(string typeName)
+  {
+    return typeName.Split('.').Last().Trim();
   }
 
   private static string? TryReadDefaultCraftingType(ClassDeclarationSyntax declaration)
