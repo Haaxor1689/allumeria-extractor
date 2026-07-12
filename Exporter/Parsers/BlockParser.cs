@@ -31,7 +31,6 @@ internal static class BlockParser
     var itemIdsBySymbol = ReadItemIdsBySymbol(sourceRoot);
     var stringArraysBySymbol = ReadStringArraysBySymbol(path);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
-    var defaultCraftingTypesByType = BuildDefaultCraftingTypeMap(sourceRoot);
     var blockTypeDefaultsByType = BuildBlockTypeDefaultsMap(sourceRoot);
 
     foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
@@ -87,6 +86,9 @@ internal static class BlockParser
           .Select(inv => SyntaxParsingUtils.TryReadQualifiedMemberArg(inv, 0, "BlockMaterial"))
           .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
+        if (string.IsNullOrWhiteSpace(material))
+          material = "dirt";
+
         var spawnDefinition = setSpawnEntryInvocation is null
           ? null
           : SyntaxParsingUtils.TryReadQualifiedMemberArg(setSpawnEntryInvocation, 0, "SpawnDefinition");
@@ -120,17 +122,30 @@ internal static class BlockParser
           string.IsNullOrWhiteSpace(blockModel)
           && resolvedTypeDefaults.TryGetValue("blockModel", out var defaultBlockModel)
         )
+        {
           blockModel = defaultBlockModel as string;
+        }
 
         var standOnEffect = TryReadExpressionArg(setStandOnEffectInvocation, 0) as string;
-        var craftingType = setCraftingTypeInvocation is null
+        if (
+          string.IsNullOrWhiteSpace(standOnEffect)
+          && resolvedTypeDefaults.TryGetValue("standOnEffect", out var defaultStandOnEffect)
+        )
+        {
+          standOnEffect = defaultStandOnEffect as string;
+        }
+
+        var craftingStation = setCraftingTypeInvocation is null
           ? null
           : SyntaxParsingUtils.TryReadQualifiedMemberArg(setCraftingTypeInvocation, 0, "CraftingStation");
 
-        if (string.IsNullOrWhiteSpace(craftingType))
+        if (
+          string.IsNullOrWhiteSpace(craftingStation)
+          && typeName == "CraftingStation"
+          && resolvedTypeDefaults.TryGetValue("craftingStation", out var defaultCraftingStation)
+        )
         {
-          if (!defaultCraftingTypesByType.TryGetValue(rawTypeName, out craftingType))
-            defaultCraftingTypesByType.TryGetValue(typeName, out craftingType);
+          craftingStation = defaultCraftingStation as string;
         }
 
         var decorationScore = invocations
@@ -139,47 +154,30 @@ internal static class BlockParser
           .FirstOrDefault(value => value is float or double or decimal);
 
         var lightEmission = TryReadIntTriple(setLightEmissionInvocation, 0, 1, 2);
+        var invocationNames = invocations
+          .Select(SyntaxParsingUtils.GetInvocationName)
+          .Where(name => !string.IsNullOrWhiteSpace(name))
+          .ToHashSet(StringComparer.Ordinal);
 
-        var hidden = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "Hide");
-        var solid = GetDefaultBool(resolvedTypeDefaults, "solid") == true;
-        var semiSolid = GetDefaultBool(resolvedTypeDefaults, "semiSolid") == true;
-        var transparent = GetDefaultBool(resolvedTypeDefaults, "transparent") == true;
-        var interactible = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "MakeInteractible");
+        var hidden = invocationNames.Contains("Hide");
+        var interactible =
+          GetDefaultBool(resolvedTypeDefaults, "interactible") == true || invocationNames.Contains("MakeInteractible");
+        var canBeFelled = GetDefaultBool(resolvedTypeDefaults, "canBeFelled") == true;
+        var isCrop = GetDefaultBool(resolvedTypeDefaults, "isCrop") == true;
         var needsSupport = GetDefaultBool(resolvedTypeDefaults, "needsSupport") == true;
-        var canBeShaped = invocations.Any(inv => SyntaxParsingUtils.GetInvocationName(inv) == "AutoGenVariants");
-        bool? blocksLight = GetDefaultBool(resolvedTypeDefaults, "blocksLight");
+        var canBeShaped = invocationNames.Contains("AutoGenVariants");
+        var spreadsSelf = invocationNames.Contains("MakeSpreadSelf");
 
-        foreach (var invocation in invocations)
-        {
-          var invocationName = SyntaxParsingUtils.GetInvocationName(invocation);
-          switch (invocationName)
-          {
-            case "MakeSolid":
-              solid = true;
-              blocksLight = true;
-              break;
-            case "MakeSemiSolid":
-              solid = true;
-              semiSolid = true;
-              blocksLight = false;
-              break;
-            case "MakeTransparent":
-              transparent = true;
-              break;
-            case "MakeNeedSupport":
-              needsSupport = true;
-              break;
-          }
-        }
+        if (invocationNames.Contains("MakeNeedSupport"))
+          needsSupport = true;
 
         var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
         var itemEntry = CreateDefaultItemEntry(id, sprite, sellValue);
 
         if (typeName != "Block")
-          entry["type"] = typeName;
+          entry["class"] = typeName;
 
-        if (!string.IsNullOrWhiteSpace(material))
-          entry["material"] = material;
+        entry["material"] = material;
 
         if (!string.IsNullOrWhiteSpace(spawnDefinition))
           entry["spawn"] = spawnDefinition;
@@ -190,26 +188,23 @@ internal static class BlockParser
         if (hidden)
           entry["hidden"] = true;
 
-        if (solid)
-          entry["solid"] = true;
-
-        if (semiSolid)
-          entry["semiSolid"] = true;
-
-        if (transparent)
-          entry["transparent"] = true;
-
         if (interactible)
           entry["interactible"] = true;
 
         if (needsSupport)
           entry["needsSupport"] = true;
 
-        if (blocksLight.HasValue)
-          entry["blocksLight"] = blocksLight.Value;
+        if (canBeFelled)
+          entry["canBeFelled"] = true;
+
+        if (isCrop)
+          entry["isCrop"] = true;
 
         if (canBeShaped)
           entry["canBeShaped"] = true;
+
+        if (spreadsSelf)
+          entry["spreadsSelf"] = true;
 
         if (category is { Count: > 0 })
           itemEntry["category"] = category;
@@ -217,22 +212,26 @@ internal static class BlockParser
         if (textures.Count > 0)
           entry["textures"] = textures;
 
+        if (!string.IsNullOrWhiteSpace(craftingStation))
+          entry["craftingStation"] = craftingStation;
+
         if (!string.IsNullOrWhiteSpace(blockModel))
           entry["blockModel"] = blockModel;
 
         if (!string.IsNullOrWhiteSpace(standOnEffect))
           entry["standOnEffect"] = standOnEffect;
 
-        if (!string.IsNullOrWhiteSpace(craftingType))
-          entry["craftingType"] = craftingType;
-
-        if (decorationScore is not null)
-          entry["decorationScore"] = decorationScore;
+        if (decorationScore is float f && f != 0f)
+          entry["decorationScore"] = f;
+        else if (decorationScore is double d && d != 0d)
+          entry["decorationScore"] = d;
+        else if (decorationScore is decimal m && m != 0m)
+          entry["decorationScore"] = m;
 
         if (lightEmission is { Count: 3 })
           entry["lightEmission"] = lightEmission;
 
-        AddExtraConstructorFields(entry, ctor, constructorType, typeName, constructorParamsByType);
+        AddWhitelistedConstructorFields(entry, ctor, constructorType, typeName, constructorParamsByType);
 
         result.Blocks.Add(entry);
         result.Items.Add(itemEntry);
@@ -469,7 +468,12 @@ internal static class BlockParser
     {
       case "canBeFelled":
         if (TryReadBoolLiteral(assignment.Right) is bool canBeFelled)
-          blockEntry["canBeFelled"] = canBeFelled;
+        {
+          if (canBeFelled)
+            blockEntry["canBeFelled"] = true;
+          else
+            blockEntry.Remove("canBeFelled");
+        }
         break;
       case "harvestLoot":
         var harvestLoot = TryReadLootDescriptionReference(assignment.Right);
@@ -672,7 +676,7 @@ internal static class BlockParser
     }
   }
 
-  private static void AddExtraConstructorFields(
+  private static void AddWhitelistedConstructorFields(
     IDictionary<string, object?> entry,
     ObjectCreationExpressionSyntax ctor,
     string constructorType,
@@ -713,7 +717,6 @@ internal static class BlockParser
       positionalArgs.Add(arg.Expression);
     }
 
-    // Skip constructor arg 0 (id), then map remaining args to constructor parameter names.
     for (var parameterIndex = 1; parameterIndex < parameterNames.Count; parameterIndex++)
     {
       var parameterName = parameterNames[parameterIndex];
@@ -735,7 +738,19 @@ internal static class BlockParser
       if (value is null)
         continue;
 
-      entry[NormalizeConstructorFieldName(parameterName)] = value;
+      var fieldName = NormalizeConstructorFieldName(parameterName);
+      switch (fieldName)
+      {
+        case "isMutated" when value is bool isMutated && isMutated:
+          entry["isMutated"] = true;
+          break;
+        case "keyItem":
+          entry["keyItem"] = value;
+          break;
+        case "treeType":
+          entry["treeType"] = value;
+          break;
+      }
     }
   }
 
@@ -917,33 +932,6 @@ internal static class BlockParser
     return map;
   }
 
-  private static IReadOnlyDictionary<string, string> BuildDefaultCraftingTypeMap(string sourceRoot)
-  {
-    var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    var blockTypesRoot = Path.Combine(sourceRoot, BlockTypesRelativePath);
-
-    if (!Directory.Exists(blockTypesRoot))
-      return map;
-
-    foreach (var file in Directory.EnumerateFiles(blockTypesRoot, "*.cs", SearchOption.TopDirectoryOnly))
-    {
-      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
-
-      foreach (var declaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
-      {
-        var typeName = declaration.Identifier.Text;
-        if (string.IsNullOrWhiteSpace(typeName))
-          continue;
-
-        var defaultValue = TryReadDefaultCraftingType(declaration);
-        if (!string.IsNullOrWhiteSpace(defaultValue))
-          map[typeName] = defaultValue;
-      }
-    }
-
-    return map;
-  }
-
   private static IReadOnlyDictionary<string, BlockTypeDefaults> BuildBlockTypeDefaultsMap(string sourceRoot)
   {
     var map = new Dictionary<string, BlockTypeDefaults>(StringComparer.OrdinalIgnoreCase);
@@ -1048,7 +1036,8 @@ internal static class BlockParser
     if (string.IsNullOrWhiteSpace(fieldName))
       return;
 
-    if (TryReadBoolLiteral(assignment.Right) is not bool boolValue)
+    var value = TryParseLiteralLikeValue(assignment.Right);
+    if (value is null)
       return;
 
     var key = fieldName switch
@@ -1058,11 +1047,10 @@ internal static class BlockParser
       "transparent" => "transparent",
       "blocksLight" => "blocksLight",
       "needsSupport" => "needsSupport",
-      _ => null,
+      _ => fieldName,
     };
 
-    if (!string.IsNullOrWhiteSpace(key))
-      attributes[key!] = boolValue;
+    attributes[key] = value;
   }
 
   private static void ApplyDefaultInvocation(IDictionary<string, object?> attributes, ExpressionSyntax expression)
@@ -1088,9 +1076,16 @@ internal static class BlockParser
       case "MakeNeedSupport":
         attributes["needsSupport"] = true;
         break;
+      case "MakeInteractible":
+        attributes["interactible"] = true;
+        break;
       case "SetBlockModel":
         if (TryReadExpressionArg(invocation, 0) is string blockModel && !string.IsNullOrWhiteSpace(blockModel))
           attributes["blockModel"] = blockModel;
+        break;
+      case "SetStandOnEffect":
+        if (TryReadExpressionArg(invocation, 0) is string standOnEffect && !string.IsNullOrWhiteSpace(standOnEffect))
+          attributes["standOnEffect"] = standOnEffect;
         break;
     }
   }
@@ -1117,87 +1112,6 @@ internal static class BlockParser
   private static string NormalizeTypeReferenceName(string typeName)
   {
     return typeName.Split('.').Last().Trim();
-  }
-
-  private static string? TryReadDefaultCraftingType(ClassDeclarationSyntax declaration)
-  {
-    // Handle field initializer forms like: private CraftingStation craftingStation = CraftingStation.work_bench;
-    foreach (var field in declaration.Members.OfType<FieldDeclarationSyntax>())
-    {
-      foreach (var variable in field.Declaration.Variables)
-      {
-        if (!string.Equals(variable.Identifier.Text, "craftingStation", StringComparison.Ordinal))
-          continue;
-
-        var fromInitializer = TryReadCraftingStationValue(variable.Initializer?.Value);
-        if (!string.IsNullOrWhiteSpace(fromInitializer))
-          return fromInitializer;
-      }
-    }
-
-    // Handle constructor assignment forms like: this.craftingStation = CraftingStation.work_bench;
-    foreach (var constructor in declaration.Members.OfType<ConstructorDeclarationSyntax>())
-    {
-      if (constructor.Body is null)
-        continue;
-
-      foreach (var assignment in constructor.Body.DescendantNodes().OfType<AssignmentExpressionSyntax>())
-      {
-        if (!IsCraftingStationTarget(assignment.Left))
-          continue;
-
-        var fromAssignment = TryReadCraftingStationValue(assignment.Right);
-        if (!string.IsNullOrWhiteSpace(fromAssignment))
-          return fromAssignment;
-      }
-    }
-
-    return null;
-  }
-
-  private static bool IsCraftingStationTarget(ExpressionSyntax expression)
-  {
-    return expression switch
-    {
-      IdentifierNameSyntax identifier => identifier.Identifier.Text == "craftingStation",
-      MemberAccessExpressionSyntax memberAccess
-        when memberAccess.Name.Identifier.Text == "craftingStation"
-          && (memberAccess.Expression is ThisExpressionSyntax || memberAccess.Expression is IdentifierNameSyntax) =>
-        true,
-      _ => false,
-    };
-  }
-
-  private static string? TryReadCraftingStationValue(ExpressionSyntax? expression)
-  {
-    if (expression is null)
-      return null;
-
-    ExpressionSyntax cursor = expression;
-
-    while (true)
-    {
-      switch (cursor)
-      {
-        case ParenthesizedExpressionSyntax parenthesized:
-          cursor = parenthesized.Expression;
-          continue;
-        case CastExpressionSyntax cast:
-          cursor = cast.Expression;
-          continue;
-        default:
-          break;
-      }
-
-      break;
-    }
-
-    return
-      cursor is MemberAccessExpressionSyntax memberAccess
-      && memberAccess.Expression is IdentifierNameSyntax owner
-      && owner.Identifier.Text == "CraftingStation"
-      ? memberAccess.Name.Identifier.Text
-      : null;
   }
 
   private static string NormalizeTypeName(string constructorType)

@@ -253,12 +253,26 @@ internal static class BlockModelParser
       .ToList();
   }
 
-  private static List<object> ExpandMeshesForTextureVariants(List<object> meshes, int textureVariantCount)
+  private static List<object> ExpandMeshesForTextureVariants(List<object> meshes, int textureCount)
   {
-    if (textureVariantCount <= 1 || meshes.Count == 0)
+    if (textureCount <= 1 || meshes.Count == 0)
       return meshes;
 
-    var expanded = new List<object>(meshes.Count * textureVariantCount);
+    var textureSpanPerVariant = GetTextureSpanPerVariant(meshes);
+    if (textureSpanPerVariant <= 0)
+      return meshes;
+
+    if (textureCount <= textureSpanPerVariant)
+      return meshes;
+
+    if (textureCount % textureSpanPerVariant != 0)
+      return meshes;
+
+    var variantCount = textureCount / textureSpanPerVariant;
+    if (variantCount <= 1)
+      return meshes;
+
+    var expanded = new List<object>(meshes.Count * variantCount);
 
     foreach (var meshObj in meshes)
     {
@@ -269,11 +283,11 @@ internal static class BlockModelParser
         continue;
       }
 
-      for (var variantIndex = 0; variantIndex < textureVariantCount; variantIndex++)
+      for (var variantIndex = 0; variantIndex < variantCount; variantIndex++)
       {
         var variantMesh = new List<object>(faces.Count);
         foreach (var face in faces)
-          variantMesh.Add(CloneFaceWithTextureVariant(face, variantIndex));
+          variantMesh.Add(CloneFaceWithTextureVariant(face, variantIndex * textureSpanPerVariant));
 
         expanded.Add(variantMesh);
       }
@@ -302,7 +316,7 @@ internal static class BlockModelParser
 
   private static Dictionary<string, object?> CloneFaceWithTextureVariant(
     IReadOnlyDictionary<string, object?> face,
-    int variantIndex
+    int textureOffset
   )
   {
     var clone = new Dictionary<string, object?>(face, StringComparer.Ordinal);
@@ -310,21 +324,64 @@ internal static class BlockModelParser
 
     if (string.Equals(type, "quad", StringComparison.Ordinal))
     {
-      if (variantIndex == 0)
+      var baseTextureIndex = ReadFaceTextureIndex(face);
+      var nextTextureIndex = baseTextureIndex + textureOffset;
+
+      if (nextTextureIndex == 0)
         clone.Remove("textureIndex");
       else
-        clone["textureIndex"] = variantIndex;
+        clone["textureIndex"] = nextTextureIndex;
 
       return clone;
     }
 
     if (string.Equals(type, "cuboid", StringComparison.Ordinal))
     {
-      clone["textureIndices"] = Enumerable.Repeat(variantIndex, 6).ToArray();
+      var baseTextureIndices = ReadFaceTextureIndices(face);
+      var nextTextureIndices = baseTextureIndices.Select(index => index + textureOffset).ToArray();
+      if (AreAllZero(nextTextureIndices))
+        clone.Remove("textureIndices");
+      else
+        clone["textureIndices"] = nextTextureIndices;
+
       return clone;
     }
 
     return clone;
+  }
+
+  private static int GetTextureSpanPerVariant(IEnumerable<object> meshes)
+  {
+    var maxIndex = 0;
+
+    foreach (var meshObj in meshes)
+    {
+      foreach (var face in AsFaceList(meshObj))
+      {
+        var faceIndices = ReadFaceTextureIndices(face);
+        for (var i = 0; i < faceIndices.Length; i++)
+          maxIndex = Math.Max(maxIndex, faceIndices[i]);
+      }
+    }
+
+    return maxIndex + 1;
+  }
+
+  private static int ReadFaceTextureIndex(IReadOnlyDictionary<string, object?> face)
+  {
+    if (face.TryGetValue("textureIndex", out var textureIndexObj) && textureIndexObj is int textureIndex)
+      return textureIndex;
+
+    return 0;
+  }
+
+  private static int[] ReadFaceTextureIndices(IReadOnlyDictionary<string, object?> face)
+  {
+    if (face.TryGetValue("textureIndices", out var textureIndicesObj) && textureIndicesObj is int[] textureIndices)
+      return EnsureArraySize(textureIndices, 6);
+
+    var textureIndex = ReadFaceTextureIndex(face);
+    return [textureIndex, textureIndex, textureIndex, textureIndex, textureIndex, textureIndex];
   }
 
   private static Dictionary<string, object?> CreateCuboidPart(CuboidDef cuboid)

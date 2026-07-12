@@ -5,12 +5,14 @@ var options = CliOptions.Parse(args);
 var totalStopwatch = Stopwatch.StartNew();
 
 var sourceRoot = Path.GetFullPath(options.SourceRoot);
-var outputRoot = Path.GetFullPath(options.OutputDirectory);
 var assetsRoot = Path.GetFullPath(options.AssetsDirectory);
+var outputAssetsRoot = Path.GetFullPath(options.OutputAssetsDirectory);
+var outputDataRoot = Path.GetFullPath(options.OutputDataDirectory);
 
 Console.WriteLine("Starting exporter...");
 Console.WriteLine($"Source: {sourceRoot}");
-Console.WriteLine($"Output: {outputRoot}");
+Console.WriteLine($"Output Assets: {outputAssetsRoot}");
+Console.WriteLine($"Output Data: {outputDataRoot}");
 Console.WriteLine($"Assets: {assetsRoot}");
 
 if (!Directory.Exists(sourceRoot))
@@ -20,8 +22,8 @@ if (!Directory.Exists(sourceRoot))
 }
 
 Console.WriteLine("[1/5] Preparing output directory...");
-Directory.CreateDirectory(outputRoot);
-Directory.CreateDirectory(Path.Combine(outputRoot, "data"));
+Directory.CreateDirectory(outputAssetsRoot);
+Directory.CreateDirectory(outputDataRoot);
 
 Console.WriteLine("[2/5] Parsing source data...");
 var blockParseResult = ExporterUtils.RunWithProgress(
@@ -202,7 +204,7 @@ var copiedItemTextures = ExporterUtils.RunWithProgress(
     TextureExportUtils.CopyTexturesById(
       textureIds: ExtractItemTextureIds(items, ["missing"]),
       sourceDirectory: Path.Combine(assetsRoot, "textures", "atlas", "items"),
-      destinationDirectory: Path.Combine(outputRoot, "assets", "items")
+      destinationDirectory: Path.Combine(outputAssetsRoot, "items")
     ),
   result => $"{result} copied"
 );
@@ -212,7 +214,7 @@ var copiedBlockTextures = ExporterUtils.RunWithProgress(
     TextureExportUtils.CopyTexturesById(
       textureIds: ExtractBlockTextureIds(blocks),
       sourceDirectory: Path.Combine(assetsRoot, "textures", "atlas", "blocks"),
-      destinationDirectory: Path.Combine(outputRoot, "assets", "blocks")
+      destinationDirectory: Path.Combine(outputAssetsRoot, "blocks")
     ),
   result => $"{result} copied"
 );
@@ -221,7 +223,7 @@ var slicedUiTextures = ExporterUtils.RunWithProgress(
   () =>
     TextureExportUtils.SliceTextureAtlasToWebp(
       sourcePath: Path.Combine(assetsRoot, "textures", "ui.png"),
-      destinationDirectory: Path.Combine(outputRoot, "assets"),
+      destinationDirectory: Path.Combine(outputAssetsRoot),
       regions: uiTextureAtlas
     ),
   result => $"{result} sliced"
@@ -252,7 +254,7 @@ var parsedTranslationsCount = ExporterUtils.RunWithProgress(
   () =>
     ExporterUtils.ParseTranslationsToJson(
       Path.Combine(assetsRoot, "translations", "en-AU", "keys.txt"),
-      Path.Combine(outputRoot, "data", "translations.json"),
+      Path.Combine(outputDataRoot, "translations.json"),
       jsonOptions
     ),
   result => result.HasValue ? $"{result.Value} records" : "source not found"
@@ -262,52 +264,52 @@ Console.WriteLine("[5/5] Writing JSON files...");
 ExporterUtils.NormalizeMissingSprites(items, Path.Combine(assetsRoot, "textures", "atlas", "items"), "missing");
 ExporterUtils.RunActionWithProgress(
   "Writing items.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "items.json"), items, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "items.json"), items, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing recipes.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "recipes.json"), recipes, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipes.json"), recipes, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing recipe_aliases.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "recipe_aliases.json"), recipeAliases, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipe_aliases.json"), recipeAliases, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing blocks.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "blocks.json"), blocks, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "blocks.json"), blocks, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing creatures.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "creatures.json"), creatures, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "creatures.json"), creatures, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing loot.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "loot.json"), loots, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "loot.json"), loots, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing spawn.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "spawn.json"), spawns, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "spawn.json"), spawns, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing effects.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "effects.json"), effects, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "effects.json"), effects, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing item_tags.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "item_tags.json"), itemTags, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "item_tags.json"), itemTags, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing block_models.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "block_models.json"), blockModels, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_models.json"), blockModels, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing summary.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputRoot, "data", "summary.json"), summary, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "summary.json"), summary, jsonOptions)
 );
 
 totalStopwatch.Stop();
 
-Console.WriteLine($"Export complete. Wrote JSON files to: {outputRoot}");
+Console.WriteLine($"Export complete. Wrote JSON files to: {outputDataRoot}");
 Console.WriteLine(
   $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockModels: {blockModels.Count}"
 );
@@ -425,10 +427,8 @@ static IReadOnlyDictionary<string, int> BuildCropTextureVariantCounts(IEnumerabl
     if (block is not IDictionary<string, object?> blockData)
       continue;
 
-    if (
-      !blockData.TryGetValue("type", out var typeValue)
-      || !string.Equals(typeValue as string, "Crop", StringComparison.Ordinal)
-    )
+    var blockClass = ReadBlockClass(blockData);
+    if (!string.Equals(blockClass, "Crop", StringComparison.Ordinal))
       continue;
 
     if (
@@ -451,6 +451,17 @@ static IReadOnlyDictionary<string, int> BuildCropTextureVariantCounts(IEnumerabl
   }
 
   return result;
+}
+
+static string? ReadBlockClass(IDictionary<string, object?> blockData)
+{
+  if (blockData.TryGetValue("class", out var classValue) && classValue is string className)
+    return className;
+
+  if (blockData.TryGetValue("type", out var legacyTypeValue) && legacyTypeValue is string legacyTypeName)
+    return legacyTypeName;
+
+  return null;
 }
 
 static int CountTextures(object? texturesValue)
