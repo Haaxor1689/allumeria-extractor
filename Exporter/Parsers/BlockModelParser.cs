@@ -4,7 +4,10 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 internal static class BlockModelParser
 {
-  public static List<object> Parse(string sourceRoot)
+  public static List<object> Parse(
+    string sourceRoot,
+    IReadOnlyDictionary<string, int>? cropTextureVariantCounts = null
+  )
   {
     var blockModelsRoot = Path.Combine(sourceRoot, "Blocks", "BlockModels");
     if (!Directory.Exists(blockModelsRoot))
@@ -49,6 +52,17 @@ internal static class BlockModelParser
 
           if (multiBlockModelModes.TryGetValue(id, out var multiBlockMode) && multiBlockMode != MultiBlockMode.None)
             meshes = MergeSecondBlockIntoMeshes(meshes, multiBlockMode);
+
+          if (
+            cropTextureVariantCounts is not null
+            && cropTextureVariantCounts.TryGetValue(id, out var textureVariantCount)
+            && textureVariantCount > 1
+          )
+          {
+            meshes = ExpandMeshesForTextureVariants(meshes, textureVariantCount);
+          }
+
+          meshes = ApplyManualMeshOverrides(id, meshes);
 
           var entry = new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
 
@@ -162,11 +176,15 @@ internal static class BlockModelParser
     if (part.TryGetValue("uvs", out var uvsObj) && uvsObj is double[] uvs)
       uvKey = string.Join(",", uvs.Select(Round));
 
+    var uvOffsetKey = string.Empty;
+    if (part.TryGetValue("uvOffsets", out var uvOffsetsObj) && uvOffsetsObj is double[] uvOffsets)
+      uvOffsetKey = string.Join(",", uvOffsets.Select(Round));
+
     var matrixKey = string.Empty;
     if (part.TryGetValue("matrix", out var matrixObj) && matrixObj is double[][] matrix)
       matrixKey = string.Join("|", matrix.Select(row => string.Join(",", row.Select(Round))));
 
-    return $"{flag}:{normal}:{textureIndex}:{uvKey}:{matrixKey}:{geometryKey}";
+    return $"{flag}:{normal}:{textureIndex}:{uvKey}:{uvOffsetKey}:{matrixKey}:{geometryKey}";
   }
 
   private static string FormatVector(double[] vector)
@@ -238,6 +256,80 @@ internal static class BlockModelParser
       .ToList();
   }
 
+  private static List<object> ExpandMeshesForTextureVariants(List<object> meshes, int textureVariantCount)
+  {
+    if (textureVariantCount <= 1 || meshes.Count == 0)
+      return meshes;
+
+    var expanded = new List<object>(meshes.Count * textureVariantCount);
+
+    foreach (var meshObj in meshes)
+    {
+      var faces = AsFaceList(meshObj);
+      if (faces.Count == 0)
+      {
+        expanded.Add(meshObj);
+        continue;
+      }
+
+      for (var variantIndex = 0; variantIndex < textureVariantCount; variantIndex++)
+      {
+        var variantMesh = new List<object>(faces.Count);
+        foreach (var face in faces)
+          variantMesh.Add(CloneFaceWithTextureVariant(face, variantIndex));
+
+        expanded.Add(variantMesh);
+      }
+    }
+
+    return expanded;
+  }
+
+  private static List<object> ApplyManualMeshOverrides(string id, List<object> meshes)
+  {
+    if (!string.Equals(id, "door", StringComparison.OrdinalIgnoreCase) || meshes.Count == 0)
+      return meshes;
+
+    foreach (var meshObj in meshes)
+    {
+      var faces = AsFaceList(meshObj);
+      if (faces.Count < 2)
+        continue;
+
+      faces[0]["textureIndices"] = new[] { 1, 1, 1, 3, 1, 1 };
+      faces[1]["textureIndices"] = new[] { 0, 0, 0, 2, 0, 0 };
+    }
+
+    return meshes;
+  }
+
+  private static Dictionary<string, object?> CloneFaceWithTextureVariant(
+    IReadOnlyDictionary<string, object?> face,
+    int variantIndex
+  )
+  {
+    var clone = new Dictionary<string, object?>(face, StringComparer.Ordinal);
+    var type = clone.TryGetValue("type", out var typeValue) ? typeValue as string : null;
+
+    if (string.Equals(type, "quad", StringComparison.Ordinal))
+    {
+      if (variantIndex == 0)
+        clone.Remove("textureIndex");
+      else
+        clone["textureIndex"] = variantIndex;
+
+      return clone;
+    }
+
+    if (string.Equals(type, "cuboid", StringComparison.Ordinal))
+    {
+      clone["textureIndices"] = Enumerable.Repeat(variantIndex, 6).ToArray();
+      return clone;
+    }
+
+    return clone;
+  }
+
   private static Dictionary<string, object?> CreateCuboidPart(CuboidDef cuboid)
   {
     var part = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -299,13 +391,11 @@ internal static class BlockModelParser
 
     if (!IsDefaultQuadUvs(faceUv))
     {
-      part["uvs"] = new[]
-      {
-        Round(faceUv.UMin / 16d),
-        Round(faceUv.VMin / 16d),
-        Round(faceUv.UMax / 16d),
-        Round(faceUv.VMax / 16d),
-      };
+      part["uvs"] = BuildNormalizedQuadUvs(faceUv);
+
+      var uvOffsets = BuildNormalizedQuadUvOffsets(faceUv);
+      if (!AreAllZero(uvOffsets))
+        part["uvOffsets"] = uvOffsets;
     }
 
     if (matrix is { Length: 16 })
@@ -1151,7 +1241,23 @@ internal static class BlockModelParser
 
   private static bool IsDefaultQuadUvs(FaceUvDef uv)
   {
-    return uv.UMin == 0 && uv.VMin == 0 && uv.UMax == 16 && uv.VMax == 16;
+    return uv.UOffset == 0 && uv.VOffset == 0 && uv.USize == 16 && uv.VSize == 16;
+  }
+
+  private static double[] BuildNormalizedQuadUvs(FaceUvDef uv)
+  {
+    // Quads use FaceUV(offsetX, offsetY, sizeX, sizeY); exported uvs are local size.
+    return [0, 0, Round(uv.USize / 16d), Round(uv.VSize / 16d)];
+  }
+
+  private static double[] BuildNormalizedQuadUvOffsets(FaceUvDef uv)
+  {
+    return [Round(uv.UOffset / 16d), Round(uv.VOffset / 16d)];
+  }
+
+  private static bool AreAllZero(IEnumerable<double> values)
+  {
+    return values.All(v => Math.Abs(v) <= double.Epsilon);
   }
 
   private static double Round(double value)
@@ -1398,7 +1504,7 @@ internal static class BlockModelParser
     public double[]? Matrix { get; set; }
   }
 
-  private readonly record struct FaceUvDef(double UMin, double VMin, double UMax, double VMax);
+  private readonly record struct FaceUvDef(double UOffset, double VOffset, double USize, double VSize);
 
   private enum MultiBlockMode
   {

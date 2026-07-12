@@ -70,9 +70,10 @@ var itemTags = ExporterUtils.RunWithProgress(
   () => ItemTagParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
+var cropTextureVariantCounts = BuildCropTextureVariantCounts(blocks);
 var blockModels = ExporterUtils.RunWithProgress(
   "Parsing block models",
-  () => BlockModelParser.Parse(sourceRoot),
+  () => BlockModelParser.Parse(sourceRoot, cropTextureVariantCounts),
   result => $"{result.Count} records"
 );
 var gameVersion = ExporterUtils.RunWithProgress("Parsing game version", () => GameVersionParser.Parse(sourceRoot));
@@ -114,9 +115,9 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["input_active"] = (368, 16, 16, 16, "ui"),
   ["scroll_thumb"] = (96, 16, 16, 16, "ui"),
   ["scroll_track"] = (112, 16, 16, 16, "ui"),
-  ["slot_hover"] = (223, 47, 18, 18, "icons"),
+  ["slot"] = (191, 47, 18, 18, "ui"),
+  ["slot_hover"] = (223, 47, 18, 18, "ui"),
   ["slot_favourite"] = (255, 95, 18, 18, "icons"),
-  ["slot_empty"] = (191, 47, 18, 18, "icons"),
   ["slot_helmet"] = (0, 256, 16, 16, "icons"),
   ["slot_chestplate"] = (16, 256, 16, 16, "icons"),
   ["slot_greaves"] = (32, 256, 16, 16, "icons"),
@@ -413,4 +414,61 @@ static IEnumerable<string> ExtractItemTextureIds(IEnumerable<object> items, IEnu
         yield return sprite;
     }
   }
+}
+
+static IReadOnlyDictionary<string, int> BuildCropTextureVariantCounts(IEnumerable<object> blocks)
+{
+  var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+  foreach (var block in blocks)
+  {
+    if (block is not IDictionary<string, object?> blockData)
+      continue;
+
+    if (!blockData.TryGetValue("type", out var typeValue) || !string.Equals(typeValue as string, "Crop", StringComparison.Ordinal))
+      continue;
+
+    if (blockData.TryGetValue("specialModel", out var specialModelValue) && specialModelValue is bool specialModel && specialModel)
+      continue;
+
+    if (!blockData.TryGetValue("blockModel", out var blockModelValue) || blockModelValue is not string blockModel)
+      continue;
+
+    blockData.TryGetValue("textures", out var texturesValue);
+    var textureCount = CountTextures(texturesValue);
+    if (textureCount <= 1)
+      continue;
+
+    if (!result.TryGetValue(blockModel, out var currentCount) || textureCount > currentCount)
+      result[blockModel] = textureCount;
+  }
+
+  return result;
+}
+
+static int CountTextures(object? texturesValue)
+{
+  var count = 0;
+
+  if (texturesValue is IEnumerable<string> stringTextures)
+  {
+    foreach (var texture in stringTextures)
+    {
+      if (!string.IsNullOrWhiteSpace(texture))
+        count++;
+    }
+
+    return count;
+  }
+
+  if (texturesValue is IEnumerable<object?> objectTextures)
+  {
+    foreach (var texture in objectTextures)
+    {
+      if (!string.IsNullOrWhiteSpace(texture?.ToString()))
+        count++;
+    }
+  }
+
+  return count;
 }

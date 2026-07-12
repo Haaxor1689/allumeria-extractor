@@ -29,6 +29,7 @@ internal static class BlockParser
     var itemEntriesById = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
     var lootEntriesById = new Dictionary<string, Dictionary<string, object?>>(StringComparer.OrdinalIgnoreCase);
     var itemIdsBySymbol = ReadItemIdsBySymbol(sourceRoot);
+    var stringArraysBySymbol = ReadStringArraysBySymbol(path);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
     var defaultCraftingTypesByType = BuildDefaultCraftingTypeMap(sourceRoot);
     var blockTypeDefaultsByType = BuildBlockTypeDefaultsMap(sourceRoot);
@@ -104,7 +105,8 @@ internal static class BlockParser
           .Select(inv => TryReadCategoryNames(inv, 0))
           .FirstOrDefault(values => values.Count > 0);
 
-        var textures = TryReadStringArrayArg(texturesInvocation, 0);
+        var textures = TryReadStringArrayArg(texturesInvocation, 0, stringArraysBySymbol);
+        textures = ApplyTextureOverrides(typeName, textures);
         if (textures.Count == 0)
         {
           var singleTexture = TryReadExpressionArg(textureInvocation, 0) as string;
@@ -1224,27 +1226,95 @@ internal static class BlockParser
     return names;
   }
 
-  private static IReadOnlyList<string> TryReadStringArrayArg(InvocationExpressionSyntax? invocation, int argumentIndex)
+  private static IReadOnlyList<string> TryReadStringArrayArg(
+    InvocationExpressionSyntax? invocation,
+    int argumentIndex,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? stringArraysBySymbol = null
+  )
   {
     if (invocation is null || invocation.ArgumentList.Arguments.Count <= argumentIndex)
       return [];
 
     var expression = invocation.ArgumentList.Arguments[argumentIndex].Expression;
-    InitializerExpressionSyntax? initializer = expression switch
+
+    if (
+      expression is ArrayCreationExpressionSyntax arrayCreation
+      || expression is ImplicitArrayCreationExpressionSyntax { Initializer: { } initializer }
+    )
     {
-      ArrayCreationExpressionSyntax arrayCreation => arrayCreation.Initializer,
-      ImplicitArrayCreationExpressionSyntax implicitArrayCreation => implicitArrayCreation.Initializer,
-      _ => null,
+      var arrayInitializer = expression is ArrayCreationExpressionSyntax arrayCreationExpression
+        ? arrayCreationExpression.Initializer
+        : ((ImplicitArrayCreationExpressionSyntax)expression).Initializer;
+
+      if (arrayInitializer is null)
+        return [];
+
+      return arrayInitializer
+        .Expressions.Select(TryParseLiteralLikeValue)
+        .OfType<string>()
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .ToArray();
+    }
+
+    if (stringArraysBySymbol is not null && TryParseLiteralLikeValue(expression) is string symbolName)
+      return stringArraysBySymbol.TryGetValue(symbolName, out var values) ? values : [];
+
+    return [];
+  }
+
+  private static IReadOnlyList<string> ApplyTextureOverrides(string typeName, IReadOnlyList<string> textures)
+  {
+    if (textures.Count == 0)
+      return textures;
+
+    return typeName switch
+    {
+      "ToggleLamp" => BuildToggleLampTextures(textures),
+      "Pumpkin" => BuildPumpkinTextures(textures),
+      _ => textures,
     };
+  }
 
-    if (initializer is null)
-      return [];
+  private static IReadOnlyList<string> BuildToggleLampTextures(IReadOnlyList<string> textures)
+  {
+    return textures.Take(textures.Count / 2).Select(t => t + "off").ToArray();
+  }
 
-    return initializer
-      .Expressions.Select(TryParseLiteralLikeValue)
-      .OfType<string>()
-      .Where(value => !string.IsNullOrWhiteSpace(value))
-      .ToArray();
+  private static IReadOnlyList<string> BuildPumpkinTextures(IReadOnlyList<string> textures)
+  {
+    return textures.Where((_, index) => index % 2 == 1).Select(t => t + "off").ToArray();
+  }
+
+  private static Dictionary<string, IReadOnlyList<string>> ReadStringArraysBySymbol(string path)
+  {
+    var root = SyntaxParsingUtils.ParseCompilationUnit(path);
+    var map = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
+    {
+      if (field.Declaration.Type.ToString() != "string[]")
+        continue;
+
+      foreach (var variable in field.Declaration.Variables)
+      {
+        if (variable.Initializer?.Value is not ArrayCreationExpressionSyntax arrayCreation)
+          continue;
+
+        if (arrayCreation.Initializer is null)
+          continue;
+
+        var values = arrayCreation
+          .Initializer.Expressions.Select(TryParseLiteralLikeValue)
+          .OfType<string>()
+          .Where(value => !string.IsNullOrWhiteSpace(value))
+          .ToArray();
+
+        if (values.Length > 0)
+          map[variable.Identifier.Text] = values;
+      }
+    }
+
+    return map;
   }
 
   private static IReadOnlyList<int> TryReadIntTriple(
