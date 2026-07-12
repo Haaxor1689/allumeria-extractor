@@ -425,10 +425,17 @@ static IReadOnlyDictionary<string, int> BuildCropTextureVariantCounts(IEnumerabl
     if (block is not IDictionary<string, object?> blockData)
       continue;
 
-    if (!blockData.TryGetValue("type", out var typeValue) || !string.Equals(typeValue as string, "Crop", StringComparison.Ordinal))
+    if (
+      !blockData.TryGetValue("type", out var typeValue)
+      || !string.Equals(typeValue as string, "Crop", StringComparison.Ordinal)
+    )
       continue;
 
-    if (blockData.TryGetValue("specialModel", out var specialModelValue) && specialModelValue is bool specialModel && specialModel)
+    if (
+      blockData.TryGetValue("specialModel", out var specialModelValue)
+      && specialModelValue is bool specialModel
+      && specialModel
+    )
       continue;
 
     if (!blockData.TryGetValue("blockModel", out var blockModelValue) || blockModelValue is not string blockModel)

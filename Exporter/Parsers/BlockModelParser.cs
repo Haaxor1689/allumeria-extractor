@@ -4,10 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 internal static class BlockModelParser
 {
-  public static List<object> Parse(
-    string sourceRoot,
-    IReadOnlyDictionary<string, int>? cropTextureVariantCounts = null
-  )
+  public static List<object> Parse(string sourceRoot, IReadOnlyDictionary<string, int>? cropTextureVariantCounts = null)
   {
     var blockModelsRoot = Path.Combine(sourceRoot, "Blocks", "BlockModels");
     if (!Directory.Exists(blockModelsRoot))
