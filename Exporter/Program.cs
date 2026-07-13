@@ -72,6 +72,11 @@ var itemTags = ExporterUtils.RunWithProgress(
   () => ItemTagParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
+var blockMaterials = ExporterUtils.RunWithProgress(
+  "Parsing block materials",
+  () => BlockMaterialParser.Parse(sourceRoot),
+  result => $"{result.Count} records"
+);
 var cropTextureVariantCounts = BuildCropTextureVariantCounts(blocks);
 var blockModels = ExporterUtils.RunWithProgress(
   "Parsing block models",
@@ -242,6 +247,7 @@ var summary = new
   spawnCount = spawns.Count,
   effectCount = effects.Count,
   itemTagCount = itemTags.Count,
+  blockMaterialCount = blockMaterials.Count,
   blockModelCount = blockModels.Count,
 };
 
@@ -299,6 +305,10 @@ ExporterUtils.RunActionWithProgress(
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "item_tags.json"), itemTags, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
+  "Writing block_materials.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_materials.json"), blockMaterials, jsonOptions)
+);
+ExporterUtils.RunActionWithProgress(
   "Writing block_models.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_models.json"), blockModels, jsonOptions)
 );
@@ -311,7 +321,7 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputDataRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockModels: {blockModels.Count}"
+  $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, BlockModels: {blockModels.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
 Console.WriteLine($"Converted block textures to WEBP: {copiedBlockTextures}");

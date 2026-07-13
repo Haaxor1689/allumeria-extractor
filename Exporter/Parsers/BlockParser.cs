@@ -163,7 +163,6 @@ internal static class BlockParser
         var interactible =
           GetDefaultBool(resolvedTypeDefaults, "interactible") == true || invocationNames.Contains("MakeInteractible");
         var canBeFelled = GetDefaultBool(resolvedTypeDefaults, "canBeFelled") == true;
-        var isCrop = GetDefaultBool(resolvedTypeDefaults, "isCrop") == true;
         var needsSupport = GetDefaultBool(resolvedTypeDefaults, "needsSupport") == true;
         var canBeShaped = invocationNames.Contains("AutoGenVariants");
         var spreadsSelf = invocationNames.Contains("MakeSpreadSelf");
@@ -196,9 +195,6 @@ internal static class BlockParser
 
         if (canBeFelled)
           entry["canBeFelled"] = true;
-
-        if (isCrop)
-          entry["isCrop"] = true;
 
         if (canBeShaped)
           entry["canBeShaped"] = true;
