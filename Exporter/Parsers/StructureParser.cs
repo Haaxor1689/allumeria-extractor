@@ -16,7 +16,8 @@ internal static class StructureParser
         if (string.IsNullOrWhiteSpace(className))
           continue;
 
-        var baseTypeNames = declaration.BaseList?.Types.Select(type => NormalizeTypeName(type.Type.ToString())).ToList() ?? [];
+        var baseTypeNames =
+          declaration.BaseList?.Types.Select(type => NormalizeTypeName(type.Type.ToString())).ToList() ?? [];
 
         MethodDeclarationSyntax? runMarkerCommand = null;
         foreach (var method in declaration.Members.OfType<MethodDeclarationSyntax>())
@@ -39,9 +40,7 @@ internal static class StructureParser
     {
       classes.TryGetValue(className, out var classInfo);
 
-      var chests = classInfo?.RunMarkerCommand is null
-        ? []
-        : ReadChestLootIds(classInfo.RunMarkerCommand);
+      var chests = classInfo?.RunMarkerCommand is null ? [] : ReadChestLootIds(classInfo.RunMarkerCommand);
 
       result.Add(
         new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -118,7 +117,10 @@ internal static class StructureParser
   private static string? TryReadBlockMember(ExpressionSyntax expression)
   {
     var reduced = Unwrap(expression);
-    if (reduced is MemberAccessExpressionSyntax memberAccess && NormalizeTypeName(memberAccess.Expression.ToString()) == "Block")
+    if (
+      reduced is MemberAccessExpressionSyntax memberAccess
+      && NormalizeTypeName(memberAccess.Expression.ToString()) == "Block"
+    )
       return memberAccess.Name.Identifier.Text;
 
     return null;
@@ -207,10 +209,11 @@ internal static class StructureParser
   private static string TrimBuilderSuffix(string className)
   {
     const string suffix = "Builder";
-    return className.EndsWith(suffix, StringComparison.Ordinal)
-      ? className[..^suffix.Length]
-      : className;
+    return className.EndsWith(suffix, StringComparison.Ordinal) ? className[..^suffix.Length] : className;
   }
 
-  private sealed record BuilderClassInfo(IReadOnlyList<string> BaseTypeNames, MethodDeclarationSyntax? RunMarkerCommand);
+  private sealed record BuilderClassInfo(
+    IReadOnlyList<string> BaseTypeNames,
+    MethodDeclarationSyntax? RunMarkerCommand
+  );
 }

@@ -94,10 +94,7 @@ internal static class LootParser
     Dictionary<string, object?> normalizedEntry;
     if (entry.ContainsKey("entries"))
     {
-      normalizedEntry = new Dictionary<string, object?>(entry, StringComparer.Ordinal)
-      {
-        ["id"] = id,
-      };
+      normalizedEntry = new Dictionary<string, object?>(entry, StringComparer.Ordinal) { ["id"] = id };
     }
     else
     {
@@ -128,25 +125,22 @@ internal static class LootParser
       if (loots[index] is not IDictionary<string, object?> lootEntry)
         continue;
 
-      if (!lootEntry.TryGetValue("id", out var idValue) || !string.Equals(idValue?.ToString(), "allPaintings", StringComparison.Ordinal))
+      if (
+        !lootEntry.TryGetValue("id", out var idValue)
+        || !string.Equals(idValue?.ToString(), "allPaintings", StringComparison.Ordinal)
+      )
         continue;
 
-        if (!lootEntry.TryGetValue("oneOf", out var oneOfValue))
-          continue;
+      if (!lootEntry.TryGetValue("oneOf", out var oneOfValue))
+        continue;
 
-        loots[index] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-          ["id"] = idValue,
-          ["entries"] = new[]
-          {
-            new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-              ["oneOf"] = oneOfValue,
-            },
-          },
-        };
-      }
+      loots[index] = new Dictionary<string, object?>(StringComparer.Ordinal)
+      {
+        ["id"] = idValue,
+        ["entries"] = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["oneOf"] = oneOfValue } },
+      };
     }
+  }
 
   private static object? ParseLootExpression(ExpressionSyntax expression)
   {
@@ -238,15 +232,15 @@ internal static class LootParser
 
   private static bool IsLootFieldType(string typeName)
   {
-    return typeName is
-      "LootDescription"
-      or "LootEntry"
-      or "LootChance"
-      or "LootChooseExclusive"
-      or "LootPerPlayer"
-      or "LootRequireItemTag"
-      or "LootFixedItem"
-      or "LootRandomAmount";
+    return typeName
+      is "LootDescription"
+        or "LootEntry"
+        or "LootChance"
+        or "LootChooseExclusive"
+        or "LootPerPlayer"
+        or "LootRequireItemTag"
+        or "LootFixedItem"
+        or "LootRandomAmount";
   }
 
   private static string? TryReadLootGroupName(ObjectCreationExpressionSyntax ctor)
