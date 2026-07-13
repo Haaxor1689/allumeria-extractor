@@ -61,10 +61,9 @@ internal static class RecipeParser
         ? itemStackCreation.ArgumentList.Arguments[0].Expression
         : null;
 
-    var resultId =
-      resultExpression is not null
-        ? ResolveRequirementItemId(resultExpression, resolutionContext, expression)
-        : null;
+    var resultId = resultExpression is not null
+      ? ResolveRequirementItemId(resultExpression, resolutionContext, expression)
+      : null;
 
     var resultAmount =
       itemStackCreation?.ArgumentList?.Arguments.Count > 1
@@ -136,7 +135,9 @@ internal static class RecipeParser
     return cursor;
   }
 
-  private static (ExpressionSyntax ItemExpression, int Amount)? TryReadRequirement(InvocationExpressionSyntax invocation)
+  private static (ExpressionSyntax ItemExpression, int Amount)? TryReadRequirement(
+    InvocationExpressionSyntax invocation
+  )
   {
     var firstArg = invocation.ArgumentList.Arguments.FirstOrDefault();
     if (firstArg?.Expression is not ObjectCreationExpressionSyntax creation)
