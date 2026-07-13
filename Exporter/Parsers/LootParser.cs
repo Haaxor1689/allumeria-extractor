@@ -16,13 +16,17 @@ internal static class LootParser
 
       foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
       {
+        var fieldTypeName = NormalizeTypeName(field.Declaration.Type.ToString());
+        if (!IsLootFieldType(fieldTypeName))
+          continue;
+
         foreach (var variable in field.Declaration.Variables)
         {
           var initializer = variable.Initializer?.Value;
           if (initializer is null)
             continue;
 
-          AddLootEntry(initializer, variable.Identifier.Text, list, indexById, syntheticIds);
+          AddLootField(initializer, variable.Identifier.Text, list, indexById, syntheticIds);
         }
       }
 
@@ -32,14 +36,16 @@ internal static class LootParser
           continue;
 
         var expression = GetOutermostChainedExpression(creation);
-        AddLootEntry(expression, fallbackSymbol: null, list, indexById, syntheticIds);
+        AddLootField(expression, fallbackSymbol: null, list, indexById, syntheticIds);
       }
     }
+
+    NormalizeLootShapes(list);
 
     return list;
   }
 
-  private static void AddLootEntry(
+  private static void AddLootField(
     ExpressionSyntax expression,
     string? fallbackSymbol,
     IList<object> list,
@@ -47,35 +53,130 @@ internal static class LootParser
     ISet<string> syntheticIds
   )
   {
-    var ctor = SyntaxParsingUtils.TryGetRootObjectCreation(expression);
-    if (ctor is null || NormalizeTypeName(ctor.Type.ToString()) != "LootDescription")
+    var parsed = ParseLootExpression(expression);
+    if (parsed is null)
       return;
 
-    var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(ctor) ?? fallbackSymbol;
+    if (parsed is IDictionary<string, object?> parsedDictionary)
+    {
+      AddLootRecord(parsedDictionary, fallbackSymbol, list, indexById, syntheticIds);
+      return;
+    }
+
+    if (parsed is IReadOnlyList<object> parsedEntries && !string.IsNullOrWhiteSpace(fallbackSymbol))
+    {
+      AddLootRecord(
+        new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+          ["id"] = fallbackSymbol,
+          ["entries"] = parsedEntries,
+        },
+        fallbackSymbol,
+        list,
+        indexById,
+        syntheticIds
+      );
+    }
+  }
+
+  private static void AddLootRecord(
+    IDictionary<string, object?> entry,
+    string? fallbackSymbol,
+    IList<object> list,
+    IDictionary<string, int> indexById,
+    ISet<string> syntheticIds
+  )
+  {
+    var id = entry.TryGetValue("id", out var idValue) ? idValue?.ToString() : fallbackSymbol;
     if (string.IsNullOrWhiteSpace(id))
       return;
 
-    var group = TryReadLootGroupName(ctor) ?? "Misc";
-    var entries = ParseEntriesFromInitializer(expression);
-
-    var entry = new Dictionary<string, object?>(StringComparer.Ordinal)
+    Dictionary<string, object?> normalizedEntry;
+    if (entry.ContainsKey("entries"))
     {
-      ["id"] = id,
-      ["group"] = group,
-      ["entries"] = entries,
-    };
+      normalizedEntry = new Dictionary<string, object?>(entry, StringComparer.Ordinal)
+      {
+        ["id"] = id,
+      };
+    }
+    else
+    {
+      normalizedEntry = new Dictionary<string, object?>(StringComparer.Ordinal)
+      {
+        ["id"] = id,
+        ["entries"] = new[] { new Dictionary<string, object?>(entry, StringComparer.Ordinal) },
+      };
+    }
 
     if (indexById.TryGetValue(id, out var existingIndex))
     {
       if (!syntheticIds.Remove(id))
         return;
 
-      list[existingIndex] = entry;
+      list[existingIndex] = normalizedEntry;
       return;
     }
 
     indexById[id] = list.Count;
-    list.Add(entry);
+    list.Add(normalizedEntry);
+  }
+
+  private static void NormalizeLootShapes(IList<object> loots)
+  {
+    for (var index = 0; index < loots.Count; index++)
+    {
+      if (loots[index] is not IDictionary<string, object?> lootEntry)
+        continue;
+
+      if (!lootEntry.TryGetValue("id", out var idValue) || !string.Equals(idValue?.ToString(), "allPaintings", StringComparison.Ordinal))
+        continue;
+
+        if (!lootEntry.TryGetValue("oneOf", out var oneOfValue))
+          continue;
+
+        loots[index] = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+          ["id"] = idValue,
+          ["entries"] = new[]
+          {
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+              ["oneOf"] = oneOfValue,
+            },
+          },
+        };
+      }
+    }
+
+  private static object? ParseLootExpression(ExpressionSyntax expression)
+  {
+    var reduced = Unwrap(expression);
+    var root = SyntaxParsingUtils.TryGetRootObjectCreation(reduced);
+
+    if (root is not null && NormalizeTypeName(root.Type.ToString()) == "LootDescription")
+    {
+      var id = SyntaxParsingUtils.TryReadIdFromObjectCreation(root);
+      if (string.IsNullOrWhiteSpace(id))
+        return null;
+
+      return new Dictionary<string, object?>(StringComparer.Ordinal)
+      {
+        ["id"] = id,
+        ["group"] = TryReadLootGroupName(root) ?? "Misc",
+        ["entries"] = ParseEntriesFromInitializer(reduced),
+      };
+    }
+
+    if (reduced is InvocationExpressionSyntax invocation && IsAddEntryInvocation(invocation))
+      return ParseChainedEntry(invocation);
+
+    if (reduced is ObjectCreationExpressionSyntax creation)
+      return ParseObjectCreationEntry(creation);
+
+    if (TryReadReferenceId(reduced, out var referenceId))
+      return new Dictionary<string, object?>(StringComparer.Ordinal) { ["ref"] = referenceId };
+
+    return null;
   }
 
   private static Dictionary<string, int> BuildIndexById(IReadOnlyList<object> entries)
@@ -133,6 +234,19 @@ internal static class LootParser
       text = text[(lastDot + 1)..];
 
     return text.Trim();
+  }
+
+  private static bool IsLootFieldType(string typeName)
+  {
+    return typeName is
+      "LootDescription"
+      or "LootEntry"
+      or "LootChance"
+      or "LootChooseExclusive"
+      or "LootPerPlayer"
+      or "LootRequireItemTag"
+      or "LootFixedItem"
+      or "LootRandomAmount";
   }
 
   private static string? TryReadLootGroupName(ObjectCreationExpressionSyntax ctor)

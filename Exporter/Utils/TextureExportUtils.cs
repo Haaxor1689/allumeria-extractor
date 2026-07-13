@@ -68,7 +68,12 @@ internal static class TextureExportUtils
       }
 
       if (IsRegionFullyTransparent(atlasPixels, atlas.Width, region.X, region.Y, region.Width, region.Height))
+      {
+        Console.WriteLine(
+          $"Skipping fully transparent region '{name}' of type '{region.Type}' at ({region.X}, {region.Y}, {region.Width}, {region.Height})"
+        );
         continue;
+      }
 
       using var slice = atlas.Clone(ctx => ctx.Crop(new Rectangle(region.X, region.Y, region.Width, region.Height)));
       var destinationPath = Path.Combine(destinationDirectory, region.Type, $"{name}.webp");

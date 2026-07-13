@@ -22,8 +22,6 @@ if (!Directory.Exists(sourceRoot))
 }
 
 Console.WriteLine("[1/5] Preparing output directory...");
-Directory.CreateDirectory(outputAssetsRoot);
-Directory.CreateDirectory(outputDataRoot);
 
 Console.WriteLine("[2/5] Parsing source data...");
 var blockParseResult = ExporterUtils.RunWithProgress(
@@ -77,6 +75,11 @@ var blockMaterials = ExporterUtils.RunWithProgress(
   () => BlockMaterialParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
+var structures = ExporterUtils.RunWithProgress(
+  "Parsing structures",
+  () => StructureParser.Parse(sourceRoot),
+  result => $"{result.Count} records"
+);
 var cropTextureVariantCounts = BuildCropTextureVariantCounts(blocks);
 var blockModels = ExporterUtils.RunWithProgress(
   "Parsing block models",
@@ -106,6 +109,7 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["card_hover"] = (528, 0, 16, 16, "ui"),
   ["card_pressed"] = (544, 0, 16, 16, "ui"),
   ["card_negative"] = (576, 0, 16, 16, "ui"),
+  ["chat_bubble"] = (509, 64, 19, 16, "ui"),
   ["ingredients"] = (48, 48, 16, 16, "ui"),
   ["ribbon"] = (80, 48, 16, 16, "ui"),
   ["dialog_rarity_0"] = (0, 96, 16, 16, "ui"),
@@ -136,15 +140,9 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["effect_buff"] = (0, 384, 18, 18, "icons"),
   ["effect_neutral"] = (32, 384, 18, 18, "icons"),
   ["effect_debuff"] = (64, 384, 18, 18, "icons"),
-  ["small_heart"] = (144, 24, 7, 7, "icons"),
-  ["small_energy"] = (144, 32, 7, 7, "icons"),
-  ["small_defence"] = (144, 40, 7, 7, "icons"),
-  ["small_attack"] = (144, 48, 7, 7, "icons"),
-  ["small_speed"] = (144, 56, 7, 7, "icons"),
-  ["small_crit"] = (144, 64, 7, 7, "icons"),
-  ["small_heal"] = (144, 72, 7, 7, "icons"),
-  ["small_knockback"] = (144, 80, 7, 7, "icons"),
-  ["small_ranged"] = (144, 88, 7, 7, "icons"),
+  ["small_heart"] = (24, 144, 7, 7, "icons"),
+  ["small_energy"] = (32, 144, 7, 7, "icons"),
+  ["small_defence"] = (40, 144, 7, 7, "icons"),
   ["heart_quarter"] = (2, 66, 11, 10, "icons"),
   ["heart_half"] = (18, 66, 11, 10, "icons"),
   ["heart_three_quarters"] = (34, 66, 11, 10, "icons"),
@@ -203,6 +201,12 @@ foreach (var itemTag in itemTags)
   uiTextureAtlas[tagTextureName] = (iconX, iconY, 8, 8, "item_tags");
 }
 
+Directory.Delete(outputAssetsRoot, recursive: true);
+Directory.CreateDirectory(outputAssetsRoot);
+
+Directory.Delete(outputDataRoot, recursive: true);
+Directory.CreateDirectory(outputDataRoot);
+
 var copiedItemTextures = ExporterUtils.RunWithProgress(
   "Converting item textures to WEBP",
   () =>
@@ -248,6 +252,7 @@ var summary = new
   effectCount = effects.Count,
   itemTagCount = itemTags.Count,
   blockMaterialCount = blockMaterials.Count,
+  structureCount = structures.Count,
   blockModelCount = blockModels.Count,
 };
 
@@ -309,6 +314,10 @@ ExporterUtils.RunActionWithProgress(
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_materials.json"), blockMaterials, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
+  "Writing structures.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "structures.json"), structures, jsonOptions)
+);
+ExporterUtils.RunActionWithProgress(
   "Writing block_models.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_models.json"), blockModels, jsonOptions)
 );
@@ -321,7 +330,7 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputDataRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, BlockModels: {blockModels.Count}"
+  $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
 Console.WriteLine($"Converted block textures to WEBP: {copiedBlockTextures}");
