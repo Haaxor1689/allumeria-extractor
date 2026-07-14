@@ -3,6 +3,15 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 internal static class ItemParser
 {
   private const string ItemTypesRelativePath = "Items\\ItemTypes";
+  private static readonly HashSet<string> ValidSlotTypes =
+  [
+    "Helmet",
+    "Chestplate",
+    "Greaves",
+    "Trinket",
+    "Ammo",
+    "Currency",
+  ];
 
   public static List<object> Parse(string sourceRoot, List<object> items)
   {
@@ -13,6 +22,7 @@ internal static class ItemParser
     var root = SyntaxParsingUtils.ParseCompilationUnit(path);
     var itemEntriesById = BuildEntryMap(items);
     var constructorParamsByType = BuildConstructorParameterMap(sourceRoot);
+    var slotTypeResolversByType = BuildSlotTypeResolvers(sourceRoot);
     var ammoTypeNames = ReadAmmoTypeNames(sourceRoot);
 
     foreach (var field in SyntaxParsingUtils.FindPublicStaticFields(root))
@@ -95,7 +105,7 @@ internal static class ItemParser
           : new Dictionary<string, object?>(StringComparer.Ordinal) { ["id"] = id };
 
         if (typeName != "Item")
-          entry["type"] = typeName;
+          entry["class"] = typeName;
 
         if (stackSize.HasValue)
           entry["stackSize"] = stackSize.Value;
@@ -134,6 +144,18 @@ internal static class ItemParser
           entry["tags"] = tags;
 
         AddExtraConstructorFields(entry, ctor, constructorType, typeName, constructorParamsByType);
+
+        var rawTypeName = constructorType.Split('.').Last().Trim();
+        if (
+          slotTypeResolversByType.TryGetValue(rawTypeName, out var slotTypeResolver)
+          || slotTypeResolversByType.TryGetValue($"Item{typeName}", out slotTypeResolver)
+          || slotTypeResolversByType.TryGetValue(typeName, out slotTypeResolver)
+        )
+        {
+          var slotType = ResolveSlotTypeFromEntry(slotTypeResolver, entry);
+          if (!string.IsNullOrWhiteSpace(slotType))
+            entry["slotType"] = slotType;
+        }
 
         if (!itemEntriesById.ContainsKey(id))
         {
@@ -348,6 +370,222 @@ internal static class ItemParser
     return simpleName.StartsWith("Item", StringComparison.Ordinal) ? simpleName[4..] : simpleName;
   }
 
+  private static IReadOnlyDictionary<string, SlotTypeResolver> BuildSlotTypeResolvers(string sourceRoot)
+  {
+    var map = new Dictionary<string, SlotTypeResolver>(StringComparer.OrdinalIgnoreCase);
+
+    var itemTypesRoot = Path.Combine(sourceRoot, ItemTypesRelativePath);
+    if (!Directory.Exists(itemTypesRoot))
+      return map;
+
+    foreach (var file in Directory.EnumerateFiles(itemTypesRoot, "*.cs", SearchOption.AllDirectories))
+    {
+      var root = SyntaxParsingUtils.ParseCompilationUnit(file);
+
+      foreach (var type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+      {
+        var resolver = TryBuildSlotTypeResolver(type);
+        if (resolver is null)
+          continue;
+
+        map[type.Identifier.Text] = resolver;
+      }
+    }
+
+    return map;
+  }
+
+  private static SlotTypeResolver? TryBuildSlotTypeResolver(TypeDeclarationSyntax type)
+  {
+    var allowedInSlot = type
+      .DescendantNodes()
+      .OfType<MethodDeclarationSyntax>()
+      .FirstOrDefault(method =>
+        method.Identifier.Text == "AllowedInSlot"
+        && method.ParameterList.Parameters.Count == 1
+        && method.ReturnType.ToString() == "bool"
+      );
+
+    if (allowedInSlot is null)
+      return null;
+
+    var returnExpression = allowedInSlot switch
+    {
+      { ExpressionBody: not null } => allowedInSlot.ExpressionBody.Expression,
+      { Body: not null } => allowedInSlot
+        .Body
+        .Statements
+        .OfType<ReturnStatementSyntax>()
+        .Select(statement => statement.Expression)
+        .FirstOrDefault(expression => expression is not null),
+      _ => null,
+    };
+
+    if (returnExpression is null)
+      return null;
+
+    var comparedOperands = CollectComparedOperands(returnExpression)
+      .Select(operand => operand.ToString())
+      .Where(text => !string.IsNullOrWhiteSpace(text))
+      .ToArray();
+
+    if (comparedOperands.Length == 0)
+      return null;
+
+    var explicitSlotTypes = comparedOperands
+      .Select(TryReadSlotTypeName)
+      .Where(name =>
+        !string.IsNullOrWhiteSpace(name)
+        && !string.Equals(name, "Normal", StringComparison.OrdinalIgnoreCase)
+        && ValidSlotTypes.Contains(name!)
+      )
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .ToArray();
+
+    if (explicitSlotTypes.Length == 1)
+      return new SlotTypeResolver(explicitSlotTypes[0], null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+    var slotFieldName = comparedOperands.Select(TryReadSlotFieldName).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+    if (string.IsNullOrWhiteSpace(slotFieldName))
+      return null;
+
+    var enumToSlotMap = BuildEnumToSlotMapForField(type, slotFieldName!);
+    return new SlotTypeResolver(null, slotFieldName, enumToSlotMap);
+  }
+
+  private static IEnumerable<ExpressionSyntax> CollectComparedOperands(ExpressionSyntax expression)
+  {
+    if (expression is BinaryExpressionSyntax binary)
+    {
+      if (binary.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.EqualsExpression)
+      {
+        if (IsSlotTypeAccess(binary.Left))
+          yield return binary.Right;
+        else if (IsSlotTypeAccess(binary.Right))
+          yield return binary.Left;
+
+        yield break;
+      }
+
+      if (
+        binary.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.LogicalOrExpression
+        || binary.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.LogicalAndExpression
+      )
+      {
+        foreach (var nested in CollectComparedOperands(binary.Left))
+          yield return nested;
+        foreach (var nested in CollectComparedOperands(binary.Right))
+          yield return nested;
+      }
+    }
+  }
+
+  private static bool IsSlotTypeAccess(ExpressionSyntax expression)
+  {
+    return expression.ToString().EndsWith(".slotType", StringComparison.Ordinal);
+  }
+
+  private static string? TryReadSlotTypeName(string expressionText)
+  {
+    const string prefix = "InventorySlot.SlotType.";
+    if (!expressionText.StartsWith(prefix, StringComparison.Ordinal))
+      return null;
+
+    var name = expressionText[prefix.Length..];
+    return string.IsNullOrWhiteSpace(name) ? null : name;
+  }
+
+  private static string? TryReadSlotFieldName(string expressionText)
+  {
+    if (expressionText.StartsWith("this.", StringComparison.Ordinal))
+      return expressionText["this.".Length..];
+
+    if (expressionText.Contains('.'))
+      return null;
+
+    return expressionText;
+  }
+
+  private static Dictionary<string, string> BuildEnumToSlotMapForField(TypeDeclarationSyntax type, string slotFieldName)
+  {
+    var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var constructor in type.DescendantNodes().OfType<ConstructorDeclarationSyntax>())
+    {
+      foreach (var switchStatement in constructor.Body?.DescendantNodes().OfType<SwitchStatementSyntax>() ?? [])
+      {
+        foreach (var section in switchStatement.Sections)
+        {
+          var assignment = section
+            .Statements
+            .OfType<ExpressionStatementSyntax>()
+            .Select(statement => statement.Expression)
+            .OfType<AssignmentExpressionSyntax>()
+            .FirstOrDefault(IsTargetSlotField);
+
+          if (assignment is null)
+            continue;
+
+          var slotTypeName = TryReadSlotTypeName(assignment.Right.ToString());
+          if (string.IsNullOrWhiteSpace(slotTypeName) || !ValidSlotTypes.Contains(slotTypeName))
+            continue;
+
+          foreach (var label in section.Labels.OfType<CaseSwitchLabelSyntax>())
+          {
+            if (label.Value is not MemberAccessExpressionSyntax member)
+              continue;
+
+            var enumName = member.Name.Identifier.Text;
+            if (!string.IsNullOrWhiteSpace(enumName))
+              map[enumName] = slotTypeName;
+          }
+        }
+      }
+    }
+
+    return map;
+
+    bool IsTargetSlotField(AssignmentExpressionSyntax assignment)
+    {
+      if (assignment.Left is MemberAccessExpressionSyntax memberAccess)
+        return memberAccess.Name.Identifier.Text == slotFieldName;
+
+      if (assignment.Left is IdentifierNameSyntax identifier)
+        return identifier.Identifier.Text == slotFieldName;
+
+      return false;
+    }
+  }
+
+  private static string? ResolveSlotTypeFromEntry(SlotTypeResolver resolver, IReadOnlyDictionary<string, object?> entry)
+  {
+    if (!string.IsNullOrWhiteSpace(resolver.DirectSlotType) && ValidSlotTypes.Contains(resolver.DirectSlotType!))
+      return resolver.DirectSlotType;
+
+    if (!string.IsNullOrWhiteSpace(resolver.SlotFieldName))
+    {
+      if (
+        entry.TryGetValue(resolver.SlotFieldName!, out var directFieldValue)
+        && directFieldValue is string directFieldName
+        && ValidSlotTypes.Contains(directFieldName)
+      )
+      {
+        return directFieldName;
+      }
+
+      foreach (var value in entry.Values.OfType<string>())
+      {
+        if (resolver.EnumToSlotMap.TryGetValue(value, out var mappedSlotType) && ValidSlotTypes.Contains(mappedSlotType))
+          return mappedSlotType;
+
+        if (ValidSlotTypes.Contains(value))
+          return value;
+      }
+    }
+
+    return null;
+  }
+
   private static IReadOnlyList<string> TryReadCategoryNames(InvocationExpressionSyntax invocation, int argumentIndex)
   {
     if (invocation.ArgumentList.Arguments.Count <= argumentIndex)
@@ -502,4 +740,10 @@ internal static class ItemParser
       _ => null,
     };
   }
+
+  private sealed record SlotTypeResolver(
+    string? DirectSlotType,
+    string? SlotFieldName,
+    IReadOnlyDictionary<string, string> EnumToSlotMap
+  );
 }

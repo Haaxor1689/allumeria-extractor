@@ -202,6 +202,9 @@ internal static class BlockParser
         if (spreadsSelf)
           entry["spreadsSelf"] = true;
 
+        if (string.Equals(id, "alpha_shop", StringComparison.OrdinalIgnoreCase))
+          entry["catalogue"] = "shop_alpha";
+
         if (category is { Count: > 0 })
           itemEntry["category"] = category;
 

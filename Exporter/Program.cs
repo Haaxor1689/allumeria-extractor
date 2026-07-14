@@ -35,6 +35,11 @@ var items = ExporterUtils.RunWithProgress(
   () => ItemParser.Parse(sourceRoot, blockParseResult.Items),
   result => $"{result.Count} records"
 );
+var catalogues = ExporterUtils.RunWithProgress(
+  "Parsing catalogues",
+  () => CatalogueParser.Parse(sourceRoot),
+  result => $"{result.Count} records"
+);
 var recipes = ExporterUtils.RunWithProgress(
   "Parsing recipes",
   () => RecipeParser.Parse(sourceRoot),
@@ -143,6 +148,7 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["small_heart"] = (24, 144, 7, 7, "icons"),
   ["small_energy"] = (32, 144, 7, 7, "icons"),
   ["small_defence"] = (40, 144, 7, 7, "icons"),
+  ["small_coin"] = (79, 288, 7, 7, "icons"),
   ["heart_quarter"] = (2, 66, 11, 10, "icons"),
   ["heart_half"] = (18, 66, 11, 10, "icons"),
   ["heart_three_quarters"] = (34, 66, 11, 10, "icons"),
@@ -243,6 +249,7 @@ var summary = new
   generatedAtUtc = DateTimeOffset.UtcNow,
   gameVersion,
   itemCount = items.Count,
+  catalogueCount = catalogues.Count,
   recipeCount = recipes.Count,
   recipeAliasCount = recipeAliases.Count,
   blockCount = blocks.Count,
@@ -280,6 +287,10 @@ ExporterUtils.RunActionWithProgress(
 ExporterUtils.RunActionWithProgress(
   "Writing recipes.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipes.json"), recipes, jsonOptions)
+);
+ExporterUtils.RunActionWithProgress(
+  "Writing catalogues.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "catalogues.json"), catalogues, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing recipe_aliases.json",
@@ -330,7 +341,7 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputDataRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count}"
+  $"Items: {items.Count}, Catalogues: {catalogues.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
 Console.WriteLine($"Converted block textures to WEBP: {copiedBlockTextures}");
