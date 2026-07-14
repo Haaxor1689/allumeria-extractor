@@ -397,8 +397,7 @@ internal static class ItemParser
 
   private static SlotTypeResolver? TryBuildSlotTypeResolver(TypeDeclarationSyntax type)
   {
-    var allowedInSlot = type
-      .DescendantNodes()
+    var allowedInSlot = type.DescendantNodes()
       .OfType<MethodDeclarationSyntax>()
       .FirstOrDefault(method =>
         method.Identifier.Text == "AllowedInSlot"
@@ -413,9 +412,7 @@ internal static class ItemParser
     {
       { ExpressionBody: not null } => allowedInSlot.ExpressionBody.Expression,
       { Body: not null } => allowedInSlot
-        .Body
-        .Statements
-        .OfType<ReturnStatementSyntax>()
+        .Body.Statements.OfType<ReturnStatementSyntax>()
         .Select(statement => statement.Expression)
         .FirstOrDefault(expression => expression is not null),
       _ => null,
@@ -443,9 +440,15 @@ internal static class ItemParser
       .ToArray();
 
     if (explicitSlotTypes.Length == 1)
-      return new SlotTypeResolver(explicitSlotTypes[0], null, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+      return new SlotTypeResolver(
+        explicitSlotTypes[0],
+        null,
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+      );
 
-    var slotFieldName = comparedOperands.Select(TryReadSlotFieldName).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+    var slotFieldName = comparedOperands
+      .Select(TryReadSlotFieldName)
+      .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
     if (string.IsNullOrWhiteSpace(slotFieldName))
       return null;
 
@@ -517,8 +520,7 @@ internal static class ItemParser
         foreach (var section in switchStatement.Sections)
         {
           var assignment = section
-            .Statements
-            .OfType<ExpressionStatementSyntax>()
+            .Statements.OfType<ExpressionStatementSyntax>()
             .Select(statement => statement.Expression)
             .OfType<AssignmentExpressionSyntax>()
             .FirstOrDefault(IsTargetSlotField);
@@ -575,7 +577,9 @@ internal static class ItemParser
 
       foreach (var value in entry.Values.OfType<string>())
       {
-        if (resolver.EnumToSlotMap.TryGetValue(value, out var mappedSlotType) && ValidSlotTypes.Contains(mappedSlotType))
+        if (
+          resolver.EnumToSlotMap.TryGetValue(value, out var mappedSlotType) && ValidSlotTypes.Contains(mappedSlotType)
+        )
           return mappedSlotType;
 
         if (ValidSlotTypes.Contains(value))
