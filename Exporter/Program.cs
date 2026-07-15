@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Text.Json;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Webp;
 
 var options = CliOptions.Parse(args);
 var totalStopwatch = Stopwatch.StartNew();
@@ -50,9 +52,9 @@ var recipeAliases = ExporterUtils.RunWithProgress(
   () => RecipeAliasParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
-var creatures = ExporterUtils.RunWithProgress(
-  "Parsing creatures",
-  () => CreatureParser.Parse(sourceRoot),
+var entities = ExporterUtils.RunWithProgress(
+  "Parsing entities",
+  () => EntityParser.Parse(sourceRoot),
   result => $"{result.Count} records"
 );
 var loots = ExporterUtils.RunWithProgress(
@@ -244,6 +246,12 @@ var slicedUiTextures = ExporterUtils.RunWithProgress(
   result => $"{result} sliced"
 );
 
+var copiedEntityAssets = ExporterUtils.RunWithProgress(
+  "Exporting entity models and textures",
+  () => CopyEntityModelsAndTextures(assetsRoot, outputAssetsRoot, ExtractModelTextureIds(entities, items)),
+  result => $"{result.models} models, {result.textures} textures"
+);
+
 var summary = new
 {
   generatedAtUtc = DateTimeOffset.UtcNow,
@@ -253,7 +261,7 @@ var summary = new
   recipeCount = recipes.Count,
   recipeAliasCount = recipeAliases.Count,
   blockCount = blocks.Count,
-  creatureCount = creatures.Count,
+  entityCount = entities.Count,
   lootCount = loots.Count,
   spawnCount = spawns.Count,
   effectCount = effects.Count,
@@ -301,8 +309,8 @@ ExporterUtils.RunActionWithProgress(
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "blocks.json"), blocks, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
-  "Writing creatures.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "creatures.json"), creatures, jsonOptions)
+  "Writing entities.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "entities.json"), entities, jsonOptions)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing loot.json",
@@ -341,7 +349,7 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputDataRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Catalogues: {catalogues.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Creatures: {creatures.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count}"
+  $"Items: {items.Count}, Catalogues: {catalogues.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Entities: {entities.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
 Console.WriteLine($"Converted block textures to WEBP: {copiedBlockTextures}");
@@ -519,4 +527,188 @@ static int CountTextures(object? texturesValue)
   }
 
   return count;
+}
+
+static IEnumerable<(string model, string texture)> ExtractModelTextureIds(
+  IEnumerable<object> entities,
+  IEnumerable<object> items
+)
+{
+  var seen = new HashSet<(string, string)>(ValueTupleComparer.Default);
+
+  // Extract from entities
+  foreach (var entity in entities)
+  {
+    if (entity is not IDictionary<string, object?> entityData)
+      continue;
+
+    var texture = entityData.TryGetValue("texture", out var textureValue) ? textureValue?.ToString() : null;
+
+    IEnumerable<string?> models;
+    if (entityData.TryGetValue("model", out var modelValue) && modelValue is string[] modelArray)
+      models = modelArray;
+    else
+      models = [entityData.TryGetValue("model", out var mv) ? mv?.ToString() : null];
+
+    foreach (var model in models)
+    {
+      if (!string.IsNullOrWhiteSpace(model) || !string.IsNullOrWhiteSpace(texture))
+      {
+        var m = !string.IsNullOrWhiteSpace(model) ? model : texture;
+        var t = !string.IsNullOrWhiteSpace(texture) ? texture : model;
+        if (!string.IsNullOrWhiteSpace(m) && !string.IsNullOrWhiteSpace(t) && seen.Add((m!, t!)))
+          yield return (m!, t!);
+      }
+    }
+  }
+
+  // Extract from items (model and texture)
+  foreach (var item in items)
+  {
+    if (item is not IDictionary<string, object?> itemData)
+      continue;
+
+    var itemModel = itemData.TryGetValue("model", out var modelValue) ? modelValue?.ToString() : null;
+    var itemTexture = itemData.TryGetValue("texture", out var textureValue) ? textureValue?.ToString() : null;
+
+    if (!string.IsNullOrWhiteSpace(itemModel) || !string.IsNullOrWhiteSpace(itemTexture))
+    {
+      var m = !string.IsNullOrWhiteSpace(itemModel) ? itemModel : itemTexture;
+      var t = !string.IsNullOrWhiteSpace(itemTexture) ? itemTexture : itemModel;
+      if (!string.IsNullOrWhiteSpace(m) && !string.IsNullOrWhiteSpace(t) && seen.Add((m!, t!)))
+        yield return (m!, t!);
+    }
+  }
+}
+
+static (int models, int textures) CopyEntityModelsAndTextures(
+  string assetsRoot,
+  string outputAssetsRoot,
+  IEnumerable<(string model, string texture)> assetIds
+)
+{
+  var modelsCopied = 0;
+  var texturesCopied = 0;
+  var processedModels = new HashSet<string>();
+  var processedTextures = new HashSet<string>();
+  var assetIdsList = assetIds.ToList(); // Materialize to allow multiple passes
+
+  // Copy all models
+  foreach (var (model, texture) in assetIdsList)
+  {
+    if (!string.IsNullOrWhiteSpace(model) && processedModels.Add(model))
+      modelsCopied += CopyModelFile(model, assetsRoot, outputAssetsRoot);
+  }
+
+  // Copy all textures (including those that might share names with models)
+  foreach (var (model, texture) in assetIdsList)
+  {
+    if (!string.IsNullOrWhiteSpace(texture) && processedTextures.Add(texture))
+      texturesCopied += CopyTextureFile(texture, assetsRoot, outputAssetsRoot);
+  }
+
+  return (modelsCopied, texturesCopied);
+}
+
+static int CopyModelFile(string assetId, string assetsRoot, string outputAssetsRoot)
+{
+  var parts = assetId.Split('.');
+  if (parts.Length < 2)
+    return 0;
+
+  var folder = parts[0];
+  var filename = string.Join(".", parts.Skip(1));
+
+  var sourceFile = Path.Combine(assetsRoot, "models", folder, filename + ".json");
+  if (!File.Exists(sourceFile))
+    return 0;
+
+  var outputDir = Path.Combine(outputAssetsRoot, "models", folder);
+  Directory.CreateDirectory(outputDir);
+
+  var outputFile = Path.Combine(outputDir, filename + ".json");
+  File.Copy(sourceFile, outputFile, overwrite: true);
+
+  return 1;
+}
+
+static int CopyTextureFile(string assetId, string assetsRoot, string outputAssetsRoot)
+{
+  var parts = assetId.Split('.');
+
+  string? folder;
+  string filename;
+
+  if (parts.Length >= 2)
+  {
+    folder = parts[0];
+    filename = string.Join(".", parts.Skip(1));
+  }
+  else
+  {
+    folder = null;
+    filename = assetId;
+  }
+
+  // Try different possible locations for texture files
+  var possiblePaths = folder is not null
+    ? new[]
+    {
+      // Standard location: textures/entity/creature.png
+      Path.Combine(assetsRoot, "textures", folder, filename + ".png"),
+      // Atlas location: textures/atlas/items/basketball.png
+      Path.Combine(assetsRoot, "textures", "atlas", folder, filename + ".png"),
+    }
+    : new[]
+    {
+      // No subfolder: texture lives directly in textures/
+      Path.Combine(assetsRoot, "textures", filename + ".png"),
+    };
+
+  string? sourceFile = null;
+  foreach (var path in possiblePaths)
+  {
+    if (File.Exists(path))
+    {
+      sourceFile = path;
+      break;
+    }
+  }
+
+  if (sourceFile == null)
+    return 0;
+
+  try
+  {
+    // Determine output folder based on source location
+    var outputDir = folder is not null
+      ? (
+        sourceFile.Contains("atlas")
+          ? Path.Combine(outputAssetsRoot, "textures", "atlas", folder)
+          : Path.Combine(outputAssetsRoot, "textures", folder)
+      )
+      : Path.Combine(outputAssetsRoot, "textures");
+
+    Directory.CreateDirectory(outputDir);
+
+    var outputFile = Path.Combine(outputDir, filename + ".webp");
+    using var image = Image.Load(sourceFile);
+    image.Save(outputFile, new WebpEncoder());
+
+    return 1;
+  }
+  catch (Exception ex)
+  {
+    Console.WriteLine($"[ERROR] Failed to convert texture {assetId}: {ex.Message}");
+    return 0;
+  }
+}
+
+sealed class ValueTupleComparer : IEqualityComparer<(string, string)>
+{
+  public static readonly ValueTupleComparer Default = new();
+
+  public bool Equals((string, string) x, (string, string) y) => x.Equals(y);
+
+  public int GetHashCode((string, string) obj) => obj.GetHashCode();
 }

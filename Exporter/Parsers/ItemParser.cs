@@ -126,10 +126,10 @@ internal static class ItemParser
           entry["swingAnim"] = swingAnim.Value;
 
         if (!string.IsNullOrWhiteSpace(itemModel))
-          entry["itemModel"] = itemModel;
+          entry["model"] = itemModel;
 
         if (!string.IsNullOrWhiteSpace(itemTexture))
-          entry["itemTexture"] = itemTexture;
+          entry["texture"] = itemTexture;
 
         if (currencyAmount.HasValue)
           entry["currencyAmmount"] = currencyAmount.Value;
@@ -315,6 +315,9 @@ internal static class ItemParser
       if (expression is null)
         continue;
 
+      if (ShouldExcludeParameter(parameterName))
+        continue;
+
       var value = TryParseLiteralLikeValue(expression);
       if (value is null)
         continue;
@@ -323,11 +326,22 @@ internal static class ItemParser
     }
   }
 
+  private static bool ShouldExcludeParameter(string parameterName)
+  {
+    return parameterName is "armourType" or "armorType";
+  }
+
   private static string NormalizeConstructorFieldName(string parameterName)
   {
     if (parameterName.EndsWith("ID", StringComparison.Ordinal) && parameterName.Length > 2)
       return parameterName[..^2];
-    return parameterName;
+
+    return parameterName switch
+    {
+      "modelName" => "model",
+      "textureName" => "texture",
+      _ => parameterName,
+    };
   }
 
   private static IReadOnlyDictionary<string, IReadOnlyList<string>> BuildConstructorParameterMap(string sourceRoot)
