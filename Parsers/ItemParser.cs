@@ -40,7 +40,7 @@ internal class ItemEntry : Dictionary<string, object?>
 
     var className = item.GetType().Name;
     if (className != "Item")
-      this["class"] = className;
+      this["class"] = className[4..];
 
     if (item.block != null)
       this["block"] = item.block.strID;
@@ -75,7 +75,7 @@ internal class ItemEntry : Dictionary<string, object?>
     if (item.rarity != 0)
       this["rarity"] = item.rarity;
 
-    if (item.fluid != null && ReflectionHelpers.TryGetStrID(item.fluid) is { } fluidId)
+    if (item.fluid != null && Reflection.GetPrivate<string>(item.fluid, "strID", out var fluidId))
       this["fluid"] = fluidId;
 
     var tags = BuildTagDictionary(item);
@@ -84,7 +84,7 @@ internal class ItemEntry : Dictionary<string, object?>
 
     AddSubclassFields(item);
 
-    var slotType = ValidSlotTypes.FirstOrDefault(s => s != null && item.AllowedInSlot(s), null)?.slotType.ToString();
+    var slotType = ValidSlotTypes.FirstOrDefault(item.AllowedInSlot)?.slotType.ToString();
     if (!string.IsNullOrWhiteSpace(slotType))
       this["slotType"] = slotType;
 
@@ -132,7 +132,7 @@ internal class ItemEntry : Dictionary<string, object?>
   }
 
   private void AddSubclassFields(Item item) =>
-    ReflectionHelpers.PopulateSubclassFields(
+    Reflection.PopulateSubclassFields(
       this,
       item,
       typeof(Item),
@@ -147,14 +147,10 @@ internal class ItemEntry : Dictionary<string, object?>
       (field, obj, dict) =>
       {
         // Special handling to show projectile model
-        if (
-          field.Name != "type"
-          || field.GetValue(obj) is not Type projType
-          || !ReflectionHelpers.IsSubtype<Entity>(projType)
-        )
+        if (field.Name != "type" || field.GetValue(obj) is not Type projType || !Reflection.IsSubtype<Entity>(projType))
           return false;
 
-        var (model, texture) = ReflectionHelpers.GetEntityModelTexture(projType);
+        var (model, texture) = Reflection.GetEntityModelTexture(projType);
 
         dict.TryGetValue("model", out var existingModel);
         dict.TryGetValue("texture", out var existingTexture);
@@ -177,7 +173,11 @@ internal static class ItemParser
     Item.AssignCategories();
 
     var items = Item
-      .items.Where(item => item != null && (item.block is null || item.block.isVariantOf is null))
+      .items.Where(item =>
+        item != null
+        && (item.block is null || item.block.isVariantOf is null)
+        && (item.block is null || item.block.item == item)
+      )
       .OrderBy(item => item.block is null);
 
     foreach (var item in items)

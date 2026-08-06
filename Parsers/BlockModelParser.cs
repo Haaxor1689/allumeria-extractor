@@ -1,5 +1,4 @@
 using Allumeria.Blocks.BlockModels;
-using Microsoft.CodeAnalysis;
 
 internal class QuadMeshData : Dictionary<string, object?>
 {
@@ -13,7 +12,7 @@ internal class QuadMeshData : Dictionary<string, object?>
       this["textureIndex"] = quad.textureIndex;
 
     var uvs = quad.uvs;
-    if (!IsDefaultQuadUvs(quad.uvs))
+    if (!IsDefaultQuadUvs(uvs))
       this["uvs"] = new[] { uvs.umin, uvs.vmin, uvs.umin + uvs.umax, uvs.vmin + uvs.vmax };
 
     if (quad.flag != 0)
@@ -44,7 +43,7 @@ internal static class BlockModelParser
 
   public static Dictionary<BlockModel, BlockModelEntry> Parse()
   {
-    var quadsMap = ReflectionHelpers.BuildStaticInstanceNameMap<BlockModelQuads>();
+    var quadsMap = Reflection.BuildStaticInstanceNameMap<BlockModelQuads>();
 
     entries[new BlockModel()] = new BlockModelEntry(
       "cube",

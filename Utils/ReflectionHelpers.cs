@@ -1,9 +1,28 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using System.Reflection.Emit;
 
-internal static class ReflectionHelpers
+internal static class Reflection
 {
   public sealed record ModelTexturePair(string? model, string? texture);
+
+  public static bool GetPrivate<T>(object target, string fieldName, [NotNullWhen(true)] out T? value)
+  {
+    var type = target.GetType();
+    while (type != null)
+    {
+      var field = type.GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+      if (field?.GetValue(target) is T typedValue)
+      {
+        value = typedValue;
+        return true;
+      }
+
+      type = type.BaseType;
+    }
+
+    value = default;
+    return false;
+  }
 
   public static object? TryConvertToExportable(object? value) =>
     value switch
@@ -19,22 +38,36 @@ internal static class ReflectionHelpers
       Enum e => e.ToString(),
       Type t => t.Name,
       // For game-data objects (e.g. Effect) that carry a string ID, export that ID.
-      _ when TryGetStrID(value) is { } strId => strId,
+      _ when value != null && GetPrivate<string>(value, "strID", out var strId) => strId,
+      _ when value != null && TryGetPublicStrId(value, out var publicStrId) => publicStrId,
       _ => null,
     };
 
-  public static string? TryGetStrID(object value)
+  private static bool TryGetPublicStrId(object target, [NotNullWhen(true)] out string? value)
   {
-    var field = value.GetType().GetField("strID", BindingFlags.Public | BindingFlags.Instance);
-    return field?.GetValue(value) as string;
+    var type = target.GetType();
+
+    var field = type.GetField("strID", BindingFlags.Instance | BindingFlags.Public);
+    if (field?.GetValue(target) is string fieldValue && !string.IsNullOrWhiteSpace(fieldValue))
+    {
+      value = fieldValue;
+      return true;
+    }
+
+    var property = type.GetProperty("strID", BindingFlags.Instance | BindingFlags.Public);
+    if (property?.GetValue(target) is string propertyValue && !string.IsNullOrWhiteSpace(propertyValue))
+    {
+      value = propertyValue;
+      return true;
+    }
+
+    value = null;
+    return false;
   }
 
   public static Dictionary<string, object?> GetFieldsAsDict(object obj, HashSet<string> skipFields)
   {
     var result = new Dictionary<string, object?>(StringComparer.Ordinal);
-
-    if (obj == null)
-      return result;
 
     var objType = obj.GetType();
     var fields = objType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -100,8 +133,8 @@ internal static class ReflectionHelpers
       if (!typeof(T).IsAssignableFrom(field.FieldType))
         continue;
 
-      if (field.GetValue(null) is T instance && !map.ContainsKey(instance))
-        map[instance] = field.Name;
+      if (field.GetValue(null) is T instance)
+        map.TryAdd(instance, field.Name);
     }
 
     return map;
@@ -127,7 +160,7 @@ internal static class ReflectionHelpers
       return;
 
     var type = concreteType;
-    while (type != baseType && type is not null)
+    while (type is not null && type != baseType)
     {
       foreach (
         var field in type.GetFields(
@@ -228,181 +261,145 @@ internal static class ReflectionHelpers
 
   private static ModelTexturePair? ScanMethodForModelTexture(MethodBase method)
   {
-    var body = method.GetMethodBody();
-    if (body == null)
-      return null;
-
-    var il = body.GetILAsByteArray();
-    if (il == null)
-      return null;
-
     var stack = new Stack<IlValue>();
     var locals = new Dictionary<int, IlValue>();
-    var module = method.Module;
     ModelTexturePair? lastPair = null;
     string? pendingModel = null;
     string? pendingTexture = null;
-    var position = 0;
 
-    while (position < il.Length)
+    foreach (var instruction in IlReader.Read(method))
     {
-      var op = ReadOpCode(il, ref position);
+      var op = instruction.OpCode;
+      var operand = instruction.Operand;
 
-      if (op.Value == OpCodes.Ldarg_0.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldarg_0.Value)
       {
         stack.Push(IlValue.This);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldarg_1.Value || op.Value == OpCodes.Ldarg_2.Value || op.Value == OpCodes.Ldarg_3.Value)
+      if (
+        op.Value == System.Reflection.Emit.OpCodes.Ldarg_1.Value
+        || op.Value == System.Reflection.Emit.OpCodes.Ldarg_2.Value
+        || op.Value == System.Reflection.Emit.OpCodes.Ldarg_3.Value
+      )
       {
         stack.Push(IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldarg_S.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldarg_S.Value)
       {
-        var argIndex = il[position++];
-        stack.Push(argIndex == 0 ? IlValue.This : IlValue.Unknown);
+        stack.Push(Convert.ToInt32(operand) == 0 ? IlValue.This : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldarg.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldarg.Value)
       {
-        var argIndex = BitConverter.ToUInt16(il, position);
-        position += 2;
-        stack.Push(argIndex == 0 ? IlValue.This : IlValue.Unknown);
+        stack.Push(Convert.ToInt32(operand) == 0 ? IlValue.This : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldstr.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldstr.Value)
       {
-        var strToken = BitConverter.ToInt32(il, position);
-        position += 4;
-
-        string? str;
-        try
-        {
-          str = module.ResolveString(strToken);
-        }
-        catch
-        {
-          str = null;
-        }
-
-        stack.Push(new IlValue(null, str));
+        stack.Push(new IlValue(null, operand as string));
         continue;
       }
 
-      if (op.Value == OpCodes.Dup.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Dup.Value)
       {
         if (stack.Count > 0)
           stack.Push(stack.Peek());
         continue;
       }
 
-      if (op.Value == OpCodes.Pop.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Pop.Value)
       {
         if (stack.Count > 0)
           stack.Pop();
         continue;
       }
 
-      if (op.Value == OpCodes.Stloc_0.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Stloc_0.Value)
       {
         locals[0] = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
         continue;
       }
 
-      if (op.Value == OpCodes.Stloc_1.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Stloc_1.Value)
       {
         locals[1] = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
         continue;
       }
 
-      if (op.Value == OpCodes.Stloc_2.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Stloc_2.Value)
       {
         locals[2] = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
         continue;
       }
 
-      if (op.Value == OpCodes.Stloc_3.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Stloc_3.Value)
       {
         locals[3] = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
         continue;
       }
 
-      if (op.Value == OpCodes.Stloc_S.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Stloc_S.Value)
       {
-        var index = il[position++];
+        var index = Convert.ToInt32(operand);
         locals[index] = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
         continue;
       }
 
-      if (op.Value == OpCodes.Stloc.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Stloc.Value)
       {
-        var index = BitConverter.ToUInt16(il, position);
-        position += 2;
+        var index = Convert.ToInt32(operand);
         locals[index] = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
         continue;
       }
 
-      if (op.Value == OpCodes.Ldloc_0.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldloc_0.Value)
       {
         stack.Push(locals.TryGetValue(0, out var local0) ? local0 : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldloc_1.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldloc_1.Value)
       {
         stack.Push(locals.TryGetValue(1, out var local1) ? local1 : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldloc_2.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldloc_2.Value)
       {
         stack.Push(locals.TryGetValue(2, out var local2) ? local2 : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldloc_3.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldloc_3.Value)
       {
         stack.Push(locals.TryGetValue(3, out var local3) ? local3 : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldloc_S.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldloc_S.Value)
       {
-        var index = il[position++];
+        var index = Convert.ToInt32(operand);
         stack.Push(locals.TryGetValue(index, out var local) ? local : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldloc.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldloc.Value)
       {
-        var index = BitConverter.ToUInt16(il, position);
-        position += 2;
+        var index = Convert.ToInt32(operand);
         stack.Push(locals.TryGetValue(index, out var local) ? local : IlValue.Unknown);
         continue;
       }
 
-      if (op.Value == OpCodes.Ldfld.Value)
+      if (op.Value == System.Reflection.Emit.OpCodes.Ldfld.Value)
       {
-        var fieldToken = BitConverter.ToInt32(il, position);
-        position += 4;
-
         var owner = stack.Count > 0 ? stack.Pop() : IlValue.Unknown;
-        FieldInfo? field;
-        try
-        {
-          field = module.ResolveField(fieldToken);
-        }
-        catch
-        {
-          field = null;
-        }
-
-        if (field == null || owner.Path == null)
+        if (operand is not FieldInfo field || owner.Path == null)
         {
           stack.Push(IlValue.Unknown);
           continue;
@@ -413,26 +410,13 @@ internal static class ReflectionHelpers
         continue;
       }
 
-      if (op.Value != OpCodes.Call.Value && op.Value != OpCodes.Callvirt.Value)
-      {
-        SkipOperand(il, ref position, op);
+      if (
+        op.Value != System.Reflection.Emit.OpCodes.Call.Value
+        && op.Value != System.Reflection.Emit.OpCodes.Callvirt.Value
+      )
         continue;
-      }
 
-      var methodToken = BitConverter.ToInt32(il, position);
-      position += 4;
-
-      MethodBase? calledMethod;
-      try
-      {
-        calledMethod = module.ResolveMethod(methodToken);
-      }
-      catch
-      {
-        continue;
-      }
-
-      if (calledMethod == null)
+      if (operand is not MethodBase calledMethod)
         continue;
 
       var parameterCount = calledMethod.GetParameters().Length;
@@ -453,7 +437,6 @@ internal static class ReflectionHelpers
       }
       else if (calledMethod.Name == "SetModel")
       {
-        // Only consider model assignments that target this.model.
         if (
           receiver.IsThisModelReceiver
           && !string.IsNullOrWhiteSpace(pendingModel)
@@ -472,94 +455,5 @@ internal static class ReflectionHelpers
     }
 
     return lastPair;
-  }
-
-  private static OpCode ReadOpCode(byte[] il, ref int position)
-  {
-    var first = il[position++];
-    if (first != 0xFE)
-      return SingleByteOpCodes[first];
-
-    var second = il[position++];
-    return MultiByteOpCodes[second];
-  }
-
-  private static void SkipOperand(byte[] il, ref int position, OpCode op)
-  {
-    switch (op.OperandType)
-    {
-      case OperandType.InlineNone:
-        return;
-      case OperandType.ShortInlineI:
-      case OperandType.ShortInlineVar:
-      case OperandType.ShortInlineBrTarget:
-        position += 1;
-        return;
-      case OperandType.InlineVar:
-        position += 2;
-        return;
-      case OperandType.InlineI:
-      case OperandType.InlineBrTarget:
-      case OperandType.InlineField:
-      case OperandType.InlineMethod:
-      case OperandType.InlineSig:
-      case OperandType.InlineString:
-      case OperandType.InlineTok:
-      case OperandType.InlineType:
-      case OperandType.ShortInlineR:
-        position += 4;
-        return;
-      case OperandType.InlineI8:
-      case OperandType.InlineR:
-        position += 8;
-        return;
-      case OperandType.InlineSwitch:
-      {
-        var cases = BitConverter.ToInt32(il, position);
-        position += 4 + (cases * 4);
-        return;
-      }
-      default:
-        return;
-    }
-  }
-
-  private static readonly OpCode[] SingleByteOpCodes = BuildSingleByteOpCodeTable();
-  private static readonly OpCode[] MultiByteOpCodes = BuildMultiByteOpCodeTable();
-
-  private static OpCode[] BuildSingleByteOpCodeTable()
-  {
-    var table = new OpCode[0x100];
-    foreach (var field in typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static))
-    {
-      if (field.GetValue(null) is not OpCode op)
-        continue;
-
-      var value = op.Value;
-      if ((value & 0xFF00) != 0)
-        continue;
-
-      table[value & 0xFF] = op;
-    }
-
-    return table;
-  }
-
-  private static OpCode[] BuildMultiByteOpCodeTable()
-  {
-    var table = new OpCode[0x100];
-    foreach (var field in typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static))
-    {
-      if (field.GetValue(null) is not OpCode op)
-        continue;
-
-      var value = op.Value;
-      if ((value & 0xFF00) != 0xFE00)
-        continue;
-
-      table[value & 0xFF] = op;
-    }
-
-    return table;
   }
 }

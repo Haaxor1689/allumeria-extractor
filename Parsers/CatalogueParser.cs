@@ -33,7 +33,7 @@ internal static class CatalogueParser
 
   public static Dictionary<Catalogue, CatalogueEntry> Parse()
   {
-    var catalogueMap = ReflectionHelpers.BuildStaticInstanceNameMap<Catalogue>();
+    var catalogueMap = Reflection.BuildStaticInstanceNameMap<Catalogue>();
 
     foreach (var (catalogue, id) in catalogueMap)
       entries[catalogue] = new CatalogueEntry(id, catalogue);

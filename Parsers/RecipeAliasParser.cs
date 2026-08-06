@@ -16,7 +16,7 @@ internal static class RecipeAliasParser
 
   public static Dictionary<RecipeAlias, RecipeAliasEntry> Parse()
   {
-    var aliasMap = ReflectionHelpers.BuildStaticInstanceNameMap<RecipeAlias>();
+    var aliasMap = Reflection.BuildStaticInstanceNameMap<RecipeAlias>();
 
     foreach (var (alias, id) in aliasMap)
       entries[alias] = new RecipeAliasEntry(alias, id);

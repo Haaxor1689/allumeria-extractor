@@ -6,8 +6,7 @@ internal class CraftingRecipeEntry : Dictionary<string, object?>
 {
   public CraftingRecipeEntry(CraftingRecipe recipe)
   {
-    var itemField = recipe.result.GetType().GetField("item", BindingFlags.NonPublic | BindingFlags.Instance);
-    if (itemField?.GetValue(recipe.result) is Item item)
+    if (Reflection.GetPrivate<Item>(recipe.result, "item", out var item))
       this["result"] = item.strID;
 
     this["amount"] = recipe.result.amount;

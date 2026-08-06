@@ -13,7 +13,7 @@ internal class EntityEntry : Dictionary<string, object?>
   public string? Texture =>
     this.TryGetValue("texture", out var textureObj) && textureObj is string texture ? texture : null;
 
-  public EntityEntry(Type entity, ushort id)
+  public EntityEntry(Type entity)
   {
     this["id"] = entity.Name;
     this["category"] = ResolveCategory(entity);
@@ -21,7 +21,7 @@ internal class EntityEntry : Dictionary<string, object?>
     if (typeof(LivingEntity).IsAssignableFrom(entity))
       AddLivingFields(entity);
 
-    var (model, texture) = ReflectionHelpers.GetEntityModelTexture(entity);
+    var (model, texture) = Reflection.GetEntityModelTexture(entity);
     if (!string.IsNullOrWhiteSpace(model) || !string.IsNullOrWhiteSpace(texture))
     {
       this["model"] = model;
@@ -37,7 +37,7 @@ internal class EntityEntry : Dictionary<string, object?>
     if (typeof(MinecartEntity).IsAssignableFrom(entity))
       return "vehicle";
 
-    if (typeof(LivingEntity).IsAssignableFrom(entity))
+    if (typeof(LivingEntity).IsAssignableFrom(entity) && entity != typeof(LivingEntity))
       return "creature";
 
     return "entity";
@@ -532,60 +532,10 @@ internal static class EntityParser
   public static Dictionary<Type, EntityEntry> Parse()
   {
     Entity.RegisterEntities();
-    var spawnByEntityType = BuildSpawnLookup();
 
-    foreach (var (entity, id) in Entity.entityToID)
-    {
-      var entry = new EntityEntry(entity, id);
-      if (spawnByEntityType.TryGetValue(entity, out var spawnId))
-        entry["spawn"] = spawnId;
-
-      entries[entity] = entry;
-    }
+    foreach (var (entity, _) in Entity.entityToID)
+      entries[entity] = new EntityEntry(entity);
 
     return entries;
-  }
-
-  private static Dictionary<Type, string> BuildSpawnLookup()
-  {
-    var lookup = new Dictionary<Type, string>();
-
-    Allumeria.EntitySystem.Spawning.SpawnDefinition.InitSpawnDefinitions();
-
-    var fields = typeof(Allumeria.EntitySystem.Spawning.SpawnDefinition).GetFields(
-      BindingFlags.Public | BindingFlags.Static
-    );
-
-    foreach (var field in fields)
-    {
-      if (!typeof(Allumeria.EntitySystem.Spawning.SpawnEntry).IsAssignableFrom(field.FieldType))
-        continue;
-
-      if (field.GetValue(null) is not Allumeria.EntitySystem.Spawning.SpawnEntry spawnEntry)
-        continue;
-
-      MapSpawnEntry(field.Name, spawnEntry, lookup);
-    }
-
-    return lookup;
-  }
-
-  private static void MapSpawnEntry(
-    string spawnId,
-    Allumeria.EntitySystem.Spawning.SpawnEntry spawnEntry,
-    Dictionary<Type, string> lookup
-  )
-  {
-    if (spawnEntry is Allumeria.EntitySystem.Spawning.SpawnMonster spawnMonster)
-    {
-      var entityTypeField = spawnMonster
-        .GetType()
-        .GetField("entityType", BindingFlags.NonPublic | BindingFlags.Instance);
-      if (entityTypeField?.GetValue(spawnMonster) is Type entityType && !lookup.ContainsKey(entityType))
-        lookup[entityType] = spawnId;
-    }
-
-    foreach (var child in spawnEntry.childEntries)
-      MapSpawnEntry(spawnId, child, lookup);
   }
 }

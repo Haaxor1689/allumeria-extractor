@@ -1,5 +1,6 @@
 using System.Reflection;
 using Allumeria.EntitySystem.Spawning;
+using Allumeria.Items.LootTables;
 
 internal class ExportedSpawnEntry : Dictionary<string, object?>
 {
@@ -14,31 +15,25 @@ internal class ExportedSpawnEntry : Dictionary<string, object?>
 
   private static object BuildSpawnEntries(SpawnEntry spawn)
   {
-    if (spawn == null)
-      return new List<object>();
-
     var type = spawn.GetType();
 
     if (spawn is SpawnMonster spawnMonster)
     {
       var result = new Dictionary<string, object?>();
 
-      var entityTypeField = type.GetField("entityType", BindingFlags.NonPublic | BindingFlags.Instance);
-      if (entityTypeField?.GetValue(spawnMonster) is Type entityType)
+      if (Reflection.GetPrivate<Type>(spawnMonster, "entityType", out var entityType))
         result["monster"] = entityType.Name;
 
-      var overrideLootField = type.GetField("overrideLoot", BindingFlags.NonPublic | BindingFlags.Instance);
-      if (overrideLootField?.GetValue(spawnMonster) is Allumeria.Items.LootTables.LootDescription lootDescription)
+      if (Reflection.GetPrivate<LootDescription>(spawnMonster, "overrideLoot", out var lootDescription))
       {
-        var strIdField = lootDescription.GetType().GetField("strID", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (strIdField?.GetValue(lootDescription) is string lootStrId)
+        if (Reflection.GetPrivate<string>(lootDescription, "strID", out var lootStrId))
           result["loot"] = lootStrId;
       }
 
       return result;
     }
 
-    var childEntries = spawn.childEntries.Select(child => BuildSpawnEntries(child)).ToList();
+    var childEntries = spawn.childEntries.Select(BuildSpawnEntries).ToList();
     if (childEntries.Count == 1)
       return childEntries[0];
 
@@ -56,9 +51,9 @@ internal static class SpawnParser
 
   public static Dictionary<SpawnEntry, ExportedSpawnEntry> Parse()
   {
-    // SpawnDefinition.InitSpawnDefinitions();
+    SpawnDefinition.InitSpawnDefinitions();
 
-    var spawnMap = ReflectionHelpers.BuildStaticInstanceNameMap<SpawnEntry, SpawnDefinition>();
+    var spawnMap = Reflection.BuildStaticInstanceNameMap<SpawnEntry, SpawnDefinition>();
 
     foreach (var (entry, id) in spawnMap)
       entries[entry] = new ExportedSpawnEntry(entry, id);

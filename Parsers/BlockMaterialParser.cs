@@ -25,7 +25,7 @@ internal static class BlockMaterialParser
 
   public static Dictionary<BlockMaterial, BlockMaterialEntry> Parse()
   {
-    var materialMap = ReflectionHelpers.BuildStaticInstanceNameMap<BlockMaterial>();
+    var materialMap = Reflection.BuildStaticInstanceNameMap<BlockMaterial>();
 
     foreach (var (material, id) in materialMap)
       entries[material] = new BlockMaterialEntry(material, id);

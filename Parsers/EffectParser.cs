@@ -10,7 +10,7 @@ internal class EffectEntry : Dictionary<string, object?>
 
   public EffectEntry(Effect effect)
   {
-    var additionalFields = ReflectionHelpers.GetFieldsAsDict(
+    var additionalFields = Reflection.GetFieldsAsDict(
       effect,
       ["strID", "intID", "textureX", "textureY", "type", "translatedName"]
     );

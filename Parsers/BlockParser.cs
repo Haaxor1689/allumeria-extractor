@@ -1,10 +1,13 @@
-using System.Reflection;
 using Allumeria.Blocks.Blocks;
 using Allumeria.Items;
 using Allumeria.Items.Crafting;
 
 internal class BlockEntry : Dictionary<string, object?>
 {
+  public string Id => TryGetValue("id", out var val) && val is string s ? s : "";
+
+  public string Class => TryGetValue("class", out var val) && val is string s ? s : "";
+
   public string[]? Textures => TryGetValue("textures", out var val) ? (string[]?)val : null;
 
   public BlockEntry(Block block)
@@ -26,11 +29,7 @@ internal class BlockEntry : Dictionary<string, object?>
         this["spawn"] = spawnEntry.Id;
     }
 
-    var interactibleType = typeof(Block).GetField(
-      "interactible",
-      BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-    );
-    if (interactibleType?.GetValue(block) is bool interactible && interactible)
+    if (Reflection.GetPrivate<bool>(block, "interactible", out var interactible) && interactible)
       this["interactible"] = true;
 
     if (block.slabVariant != null)
@@ -45,8 +44,6 @@ internal class BlockEntry : Dictionary<string, object?>
     if (block.needsSupport)
       this["needsSupport"] = true;
 
-    // TODO: disableItemDrops
-
     // TODO: Fix with real solution after early access release
     if (block.strID == "alpha_shop")
       this["catalogue"] = "shop_alpha";
@@ -55,10 +52,17 @@ internal class BlockEntry : Dictionary<string, object?>
       this["textures"] = block
         .textureStrings.Select(t =>
         {
-          if (t.EndsWith("_off"))
-            return null;
-          if (t.EndsWith("_on"))
-            return t + "off";
+          if ((Class == "ToggleLamp" && Id != "logic_pixel") || Class == "Pumpkin")
+          {
+            if (t.EndsWith("_off"))
+              return null;
+            if (t.EndsWith("_on"))
+              return t + "off";
+          }
+          else if (Id.StartsWith("lamp_"))
+          {
+            return t + "_both";
+          }
           return t;
         })
         .Where(t => t != null)
@@ -66,13 +70,8 @@ internal class BlockEntry : Dictionary<string, object?>
 
     if (block is BlockCraftingStation)
     {
-      var craftingStationType = typeof(BlockCraftingStation).GetField(
-        "craftingStation",
-        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-      );
-      if (craftingStationType?.GetValue(block) is CraftingStation craftingStationEntry)
-        if (craftingStationEntry != null)
-          this["craftingStation"] = craftingStationEntry.strID;
+      if (Reflection.GetPrivate<CraftingStation>(block, "craftingStation", out var craftingStationEntry))
+        this["craftingStation"] = craftingStationEntry.strID;
     }
 
     BlockModelParser.entries.TryGetValue(block.model, out var blockModelEntry);
@@ -102,11 +101,7 @@ internal class BlockEntry : Dictionary<string, object?>
         this["loot"] = lootEntry.Id;
     }
 
-    var lightEmissionType = typeof(Block).GetField(
-      "lightEmission",
-      BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-    );
-    if (block.emitsLight && lightEmissionType?.GetValue(block) is byte[] lightEmission)
+    if (block.emitsLight && Reflection.GetPrivate<byte[]>(block, "lightEmission", out var lightEmission))
       this["lightEmission"] = lightEmission.Select(b => (int)b).ToArray()[0..3];
 
     if (block.item.strID != block.strID)
@@ -114,21 +109,17 @@ internal class BlockEntry : Dictionary<string, object?>
 
     if (block is BlockDoor)
     {
-      var keyItemType = typeof(BlockDoor).GetField(
-        "keyItem",
-        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-      );
-      if (keyItemType?.GetValue(block) is Item keyItem)
+      if (Reflection.GetPrivate<Item>(block, "keyItem", out var keyItem))
         this["keyItem"] = keyItem.strID;
     }
 
     if (block is BlockCrop blockCrop)
     {
       if (blockCrop.spreadsSelf)
-        this["spreadsSelf"] = blockCrop.spreadsSelf;
+        this["spreadsSelf"] = true;
 
       if (blockCrop.isMutated)
-        this["isMutated"] = blockCrop.isMutated;
+        this["isMutated"] = true;
 
       if (blockCrop.harvestLoot != null)
       {

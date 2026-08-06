@@ -10,19 +10,13 @@ internal class LootDescriptionEntry : Dictionary<string, object?>
 
   public LootDescriptionEntry(LootDescription loot)
   {
-    var striIdField = typeof(LootDescription).GetField(
-      "strID",
-      BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-    );
-    this["id"] = striIdField?.GetValue(loot);
+    Reflection.GetPrivate<string>(loot, "strID", out var lootId);
+    this["id"] = lootId;
 
     this["group"] = loot.group.ToString();
 
-    var entriesType = typeof(LootDescription).GetField(
-      "entries",
-      BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-    );
-    if (entriesType?.GetValue(loot) is IEnumerable<LootEntry> entries)
+    if (Reflection.GetPrivate<IEnumerable<LootEntry>>(loot, "entries", out var entries))
+    {
       if (entries.Count() == 1)
       {
         var dict = ResolveLootEntry(entries.First());
@@ -31,8 +25,9 @@ internal class LootDescriptionEntry : Dictionary<string, object?>
       }
       else
       {
-        this["entries"] = entries.Select(e => ResolveLootEntry(e)).ToList();
+        this["entries"] = entries.Select(ResolveLootEntry).ToList();
       }
+    }
   }
 
   private static Dictionary<string, object?> ResolveLootEntry(LootEntry entry)
@@ -61,12 +56,10 @@ internal class LootDescriptionEntry : Dictionary<string, object?>
       }
       case LootFixedItem fixedItem:
       {
-        var itemField = type.GetField("item", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (itemField?.GetValue(fixedItem) is Item itemFixed)
+        if (Reflection.GetPrivate<Item>(fixedItem, "item", out var itemFixed))
           dict["item"] = itemFixed.strID;
 
-        var amountField = type.GetField("amount", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (amountField?.GetValue(fixedItem) is int amount)
+        if (Reflection.GetPrivate<int>(fixedItem, "amount", out var amount))
           dict["amount"] = amount;
 
         break;
@@ -78,24 +71,20 @@ internal class LootDescriptionEntry : Dictionary<string, object?>
       }
       case LootRandomAmount lootRandomAmount:
       {
-        var entryField = type.GetField("item", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (entryField?.GetValue(lootRandomAmount) is Item item)
+        if (Reflection.GetPrivate<Item>(lootRandomAmount, "item", out var item))
           dict["item"] = item.strID;
 
-        var minField = type.GetField("min", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (minField?.GetValue(lootRandomAmount) is int min)
+        if (Reflection.GetPrivate<int>(lootRandomAmount, "min", out var min))
           dict["min"] = min;
 
-        var maxField = type.GetField("max", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (maxField?.GetValue(lootRandomAmount) is int max)
+        if (Reflection.GetPrivate<int>(lootRandomAmount, "max", out var max))
           dict["max"] = max;
 
         break;
       }
       case LootRequireItemTag lootRequireItemTag:
       {
-        var tagField = type.GetField("tag", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (tagField?.GetValue(lootRequireItemTag) is ItemTag tag)
+        if (Reflection.GetPrivate<ItemTag>(lootRequireItemTag, "tag", out var tag))
           dict["needs"] = tag.strID;
 
         break;

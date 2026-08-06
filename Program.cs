@@ -332,8 +332,6 @@ return 0;
 
 static IEnumerable<(string model, string texture)> ExtractModelTextureIds()
 {
-  var seen = new HashSet<(string, string)>(ValueTupleComparer.Default);
-
   // Extract from entities
   foreach (var entity in EntityParser.entries.Values)
     if (!string.IsNullOrWhiteSpace(entity.Model) && !string.IsNullOrWhiteSpace(entity.Texture))
@@ -471,13 +469,4 @@ static int CopyTextureFile(string assetId, string assetsRoot, string outputAsset
     Console.WriteLine($"[ERROR] Failed to convert texture {assetId}: {ex.Message}");
     return 0;
   }
-}
-
-sealed class ValueTupleComparer : IEqualityComparer<(string, string)>
-{
-  public static readonly ValueTupleComparer Default = new();
-
-  public bool Equals((string, string) x, (string, string) y) => x.Equals(y);
-
-  public int GetHashCode((string, string) obj) => obj.GetHashCode();
 }
