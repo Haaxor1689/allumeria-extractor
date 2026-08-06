@@ -1,99 +1,87 @@
 ﻿using System.Diagnostics;
-using System.Text.Json;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Webp;
 
 var options = CliOptions.Parse(args);
 var totalStopwatch = Stopwatch.StartNew();
 
-var sourceRoot = Path.GetFullPath(options.SourceRoot);
 var assetsRoot = Path.GetFullPath(options.AssetsDirectory);
 var outputAssetsRoot = Path.GetFullPath(options.OutputAssetsDirectory);
 var outputDataRoot = Path.GetFullPath(options.OutputDataDirectory);
 
 Console.WriteLine("Starting exporter...");
-Console.WriteLine($"Source: {sourceRoot}");
 Console.WriteLine($"Output Assets: {outputAssetsRoot}");
 Console.WriteLine($"Output Data: {outputDataRoot}");
 Console.WriteLine($"Assets: {assetsRoot}");
 
-if (!Directory.Exists(sourceRoot))
-{
-  Console.Error.WriteLine($"Source root does not exist: {sourceRoot}");
-  return 2;
-}
-
 Console.WriteLine("[1/5] Preparing output directory...");
 
 Console.WriteLine("[2/5] Parsing source data...");
-var blockParseResult = ExporterUtils.RunWithProgress(
-  "Parsing blocks",
-  () => BlockParser.Parse(sourceRoot),
-  result => $"{result.Blocks.Count} blocks, {result.Items.Count} block items"
-);
-var blocks = blockParseResult.Blocks;
 var items = ExporterUtils.RunWithProgress(
   "Parsing items",
-  () => ItemParser.Parse(sourceRoot, blockParseResult.Items),
+  () => ItemParser.Parse(),
   result => $"{result.Count} records"
 );
 var catalogues = ExporterUtils.RunWithProgress(
   "Parsing catalogues",
-  () => CatalogueParser.Parse(sourceRoot),
+  () => CatalogueParser.Parse(),
   result => $"{result.Count} records"
 );
 var recipes = ExporterUtils.RunWithProgress(
   "Parsing recipes",
-  () => RecipeParser.Parse(sourceRoot),
+  () => RecipeParser.Parse(),
   result => $"{result.Count} records"
 );
 var recipeAliases = ExporterUtils.RunWithProgress(
   "Parsing recipe aliases",
-  () => RecipeAliasParser.Parse(sourceRoot),
+  () => RecipeAliasParser.Parse(),
   result => $"{result.Count} records"
 );
 var entities = ExporterUtils.RunWithProgress(
   "Parsing entities",
-  () => EntityParser.Parse(sourceRoot),
+  () => EntityParser.Parse(),
   result => $"{result.Count} records"
 );
 var loots = ExporterUtils.RunWithProgress(
   "Parsing loot tables",
-  () => LootParser.Parse(sourceRoot, blockParseResult.Loots),
+  () => LootParser.Parse(),
   result => $"{result.Count} records"
 );
 var spawns = ExporterUtils.RunWithProgress(
   "Parsing spawns",
-  () => SpawnParser.Parse(sourceRoot),
+  () => SpawnParser.Parse(),
   result => $"{result.Count} records"
 );
 var effects = ExporterUtils.RunWithProgress(
   "Parsing effects",
-  () => EffectParser.Parse(sourceRoot),
+  () => EffectParser.Parse(),
   result => $"{result.Count} records"
 );
 var itemTags = ExporterUtils.RunWithProgress(
   "Parsing item tags",
-  () => ItemTagParser.Parse(sourceRoot),
+  () => ItemTagParser.Parse(),
   result => $"{result.Count} records"
 );
 var blockMaterials = ExporterUtils.RunWithProgress(
   "Parsing block materials",
-  () => BlockMaterialParser.Parse(sourceRoot),
+  () => BlockMaterialParser.Parse(),
   result => $"{result.Count} records"
 );
 var structures = ExporterUtils.RunWithProgress(
   "Parsing structures",
-  () => StructureParser.Parse(sourceRoot),
+  () => StructureParser.Parse(),
   result => $"{result.Count} records"
 );
-var cropTextureVariantCounts = BuildCropTextureVariantCounts(blocks);
 var blockModels = ExporterUtils.RunWithProgress(
   "Parsing block models",
-  () => BlockModelParser.Parse(sourceRoot, cropTextureVariantCounts),
+  () => BlockModelParser.Parse(),
   result => $"{result.Count} records"
 );
-var gameVersion = ExporterUtils.RunWithProgress("Parsing game version", () => GameVersionParser.Parse(sourceRoot));
+var blocks = ExporterUtils.RunWithProgress(
+  "Parsing blocks",
+  () => BlockParser.Parse(),
+  result => $"{result.Count} blocks"
+);
 
 Console.WriteLine("[3/5] Exporting textures...");
 var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height, string Type)>(StringComparer.Ordinal)
@@ -165,48 +153,22 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["category_decoration"] = (165, 352, 6, 6, "icons"),
 };
 
-foreach (var effect in effects)
+foreach (var effect in effects.Values)
 {
-  if (
-    effect is not IDictionary<string, object?> effectData
-    || !effectData.TryGetValue("id", out var idValue)
-    || !effectData.TryGetValue("textureX", out var textureXValue)
-    || !effectData.TryGetValue("textureY", out var textureYValue)
-    || textureXValue is null
-    || textureYValue is null
-  )
-  {
-    continue;
-  }
-
-  if (!TryReadInt32(textureXValue, out var textureX) || !TryReadInt32(textureYValue, out var textureY))
+  if (effect.TextureX is null || effect.TextureY is null)
     continue;
 
-  if (idValue is null)
-    continue;
-
-  var effectTextureName = $"{textureX}x{textureY}";
-  uiTextureAtlas[effectTextureName] = (textureX, textureY, 16, 16, "effects");
+  var effectTextureName = $"{effect.TextureX}x{effect.TextureY}";
+  uiTextureAtlas[effectTextureName] = (effect.TextureX.Value, effect.TextureY.Value, 16, 16, "effects");
 }
 
-foreach (var itemTag in itemTags)
+foreach (var itemTag in itemTags.Values)
 {
-  if (
-    itemTag is not IDictionary<string, object?> itemTagData
-    || !itemTagData.TryGetValue("iconX", out var iconXValue)
-    || !itemTagData.TryGetValue("iconY", out var iconYValue)
-    || iconXValue is null
-    || iconYValue is null
-  )
-  {
-    continue;
-  }
-
-  if (!TryReadInt32(iconXValue, out var iconX) || !TryReadInt32(iconYValue, out var iconY))
+  if (itemTag.IconX is null || itemTag.IconY is null)
     continue;
 
-  var tagTextureName = $"{iconX}x{iconY}";
-  uiTextureAtlas[tagTextureName] = (iconX, iconY, 8, 8, "item_tags");
+  var tagTextureName = $"{itemTag.IconX}x{itemTag.IconY}";
+  uiTextureAtlas[tagTextureName] = (itemTag.IconX.Value, itemTag.IconY.Value, 8, 8, "item_tags");
 }
 
 Directory.Delete(outputAssetsRoot, recursive: true);
@@ -219,7 +181,12 @@ var copiedItemTextures = ExporterUtils.RunWithProgress(
   "Converting item textures to WEBP",
   () =>
     TextureExportUtils.CopyTexturesById(
-      textureIds: ExtractItemTextureIds(items, ["missing"]),
+      textureIds: ItemParser
+        .entries.Values.Select(entry => entry.Sprite)
+        .Where(sprite => !string.IsNullOrWhiteSpace(sprite))
+        .Select(sprite => sprite!)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Concat(["missing"]),
       sourceDirectory: Path.Combine(assetsRoot, "textures", "atlas", "items"),
       destinationDirectory: Path.Combine(outputAssetsRoot, "items")
     ),
@@ -229,7 +196,9 @@ var copiedBlockTextures = ExporterUtils.RunWithProgress(
   "Converting block textures to WEBP",
   () =>
     TextureExportUtils.CopyTexturesById(
-      textureIds: ExtractBlockTextureIds(blocks),
+      textureIds: BlockParser
+        .entries.Values.SelectMany(entry => entry.Textures ?? [])
+        .Distinct(StringComparer.OrdinalIgnoreCase),
       sourceDirectory: Path.Combine(assetsRoot, "textures", "atlas", "blocks"),
       destinationDirectory: Path.Combine(outputAssetsRoot, "blocks")
     ),
@@ -246,16 +215,16 @@ var slicedUiTextures = ExporterUtils.RunWithProgress(
   result => $"{result} sliced"
 );
 
-var copiedEntityAssets = ExporterUtils.RunWithProgress(
+ExporterUtils.RunWithProgress(
   "Exporting entity models and textures",
-  () => CopyEntityModelsAndTextures(assetsRoot, outputAssetsRoot, ExtractModelTextureIds(entities, items)),
+  () => CopyEntityModelsAndTextures(assetsRoot, outputAssetsRoot, ExtractModelTextureIds()),
   result => $"{result.models} models, {result.textures} textures"
 );
 
 var summary = new
 {
   generatedAtUtc = DateTimeOffset.UtcNow,
-  gameVersion,
+  gameVersion = Allumeria.Game.FULL_VERSION,
   itemCount = items.Count,
   catalogueCount = catalogues.Count,
   recipeCount = recipes.Count,
@@ -271,8 +240,6 @@ var summary = new
   blockModelCount = blockModels.Count,
 };
 
-var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-
 Console.WriteLine("[4/5] Parsing and writing translations...");
 
 var parsedTranslationsCount = ExporterUtils.RunWithProgress(
@@ -280,69 +247,68 @@ var parsedTranslationsCount = ExporterUtils.RunWithProgress(
   () =>
     ExporterUtils.ParseTranslationsToJson(
       Path.Combine(assetsRoot, "translations", "en-AU", "keys.txt"),
-      Path.Combine(outputDataRoot, "translations.json"),
-      jsonOptions
+      Path.Combine(outputDataRoot, "translations.json")
     ),
   result => result.HasValue ? $"{result.Value} records" : "source not found"
 );
 
 Console.WriteLine("[5/5] Writing JSON files...");
-ExporterUtils.NormalizeMissingSprites(items, Path.Combine(assetsRoot, "textures", "atlas", "items"), "missing");
+ExporterUtils.NormalizeMissingSprites(items.Values, Path.Combine(assetsRoot, "textures", "atlas", "items"), "missing");
 ExporterUtils.RunActionWithProgress(
   "Writing items.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "items.json"), items, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "items.json"), items.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing recipes.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipes.json"), recipes, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipes.json"), recipes.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing catalogues.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "catalogues.json"), catalogues, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "catalogues.json"), catalogues.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing recipe_aliases.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipe_aliases.json"), recipeAliases, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "recipe_aliases.json"), recipeAliases.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing blocks.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "blocks.json"), blocks, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "blocks.json"), blocks.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing entities.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "entities.json"), entities, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "entities.json"), entities.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing loot.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "loot.json"), loots, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "loot.json"), loots.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing spawn.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "spawn.json"), spawns, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "spawn.json"), spawns.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing effects.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "effects.json"), effects, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "effects.json"), effects.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing item_tags.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "item_tags.json"), itemTags, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "item_tags.json"), itemTags.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing block_materials.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_materials.json"), blockMaterials, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_materials.json"), blockMaterials.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing structures.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "structures.json"), structures, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "structures.json"), structures.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing block_models.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_models.json"), blockModels, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_models.json"), blockModels.Values)
 );
 ExporterUtils.RunActionWithProgress(
   "Writing summary.json",
-  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "summary.json"), summary, jsonOptions)
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "summary.json"), summary)
 );
 
 totalStopwatch.Stop();
@@ -364,221 +330,24 @@ Console.WriteLine($"Total time: {totalStopwatch.Elapsed.TotalSeconds:F2}s");
 
 return 0;
 
-static bool TryReadInt32(object value, out int result)
-{
-  switch (value)
-  {
-    case int intValue:
-      result = intValue;
-      return true;
-    case long longValue when longValue >= int.MinValue && longValue <= int.MaxValue:
-      result = (int)longValue;
-      return true;
-    case string stringValue when int.TryParse(stringValue, out var parsed):
-      result = parsed;
-      return true;
-    default:
-      result = default;
-      return false;
-  }
-}
-
-static IEnumerable<string> ExtractBlockTextureIds(IEnumerable<object> blocks)
-{
-  foreach (var block in blocks)
-  {
-    if (block is not IDictionary<string, object?> blockData)
-      continue;
-
-    if (blockData.TryGetValue("texture", out var textureValue))
-    {
-      var texture = textureValue?.ToString();
-      if (!string.IsNullOrWhiteSpace(texture))
-        yield return texture;
-    }
-
-    if (!blockData.TryGetValue("textures", out var texturesValue) || texturesValue is null)
-      continue;
-
-    if (texturesValue is IEnumerable<string> stringTextures)
-    {
-      foreach (var texture in stringTextures)
-      {
-        if (!string.IsNullOrWhiteSpace(texture))
-          yield return texture;
-      }
-      continue;
-    }
-
-    if (texturesValue is IEnumerable<object?> objectTextures)
-    {
-      foreach (var texture in objectTextures)
-      {
-        var textureId = texture?.ToString();
-        if (!string.IsNullOrWhiteSpace(textureId))
-          yield return textureId;
-      }
-    }
-  }
-}
-
-static IEnumerable<string> ExtractItemTextureIds(IEnumerable<object> items, IEnumerable<string>? extraTextureIds = null)
-{
-  var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-  if (extraTextureIds is not null)
-  {
-    foreach (var extraId in extraTextureIds)
-    {
-      if (!string.IsNullOrWhiteSpace(extraId) && seen.Add(extraId))
-        yield return extraId;
-    }
-  }
-
-  foreach (var item in items)
-  {
-    if (item is not IDictionary<string, object?> itemData)
-      continue;
-
-    if (itemData.TryGetValue("id", out var idValue))
-    {
-      var id = idValue?.ToString();
-      if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
-        yield return id;
-    }
-
-    if (itemData.TryGetValue("sprite", out var spriteValue))
-    {
-      var sprite = spriteValue?.ToString();
-      if (!string.IsNullOrWhiteSpace(sprite) && seen.Add(sprite))
-        yield return sprite;
-    }
-  }
-}
-
-static IReadOnlyDictionary<string, int> BuildCropTextureVariantCounts(IEnumerable<object> blocks)
-{
-  var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-  foreach (var block in blocks)
-  {
-    if (block is not IDictionary<string, object?> blockData)
-      continue;
-
-    var blockClass = ReadBlockClass(blockData);
-    if (!string.Equals(blockClass, "Crop", StringComparison.Ordinal))
-      continue;
-
-    if (
-      blockData.TryGetValue("specialModel", out var specialModelValue)
-      && specialModelValue is bool specialModel
-      && specialModel
-    )
-      continue;
-
-    if (!blockData.TryGetValue("blockModel", out var blockModelValue) || blockModelValue is not string blockModel)
-      continue;
-
-    blockData.TryGetValue("textures", out var texturesValue);
-    var textureCount = CountTextures(texturesValue);
-    if (textureCount <= 1)
-      continue;
-
-    if (!result.TryGetValue(blockModel, out var currentCount) || textureCount > currentCount)
-      result[blockModel] = textureCount;
-  }
-
-  return result;
-}
-
-static string? ReadBlockClass(IDictionary<string, object?> blockData)
-{
-  if (blockData.TryGetValue("class", out var classValue) && classValue is string className)
-    return className;
-
-  if (blockData.TryGetValue("type", out var legacyTypeValue) && legacyTypeValue is string legacyTypeName)
-    return legacyTypeName;
-
-  return null;
-}
-
-static int CountTextures(object? texturesValue)
-{
-  var count = 0;
-
-  if (texturesValue is IEnumerable<string> stringTextures)
-  {
-    foreach (var texture in stringTextures)
-    {
-      if (!string.IsNullOrWhiteSpace(texture))
-        count++;
-    }
-
-    return count;
-  }
-
-  if (texturesValue is IEnumerable<object?> objectTextures)
-  {
-    foreach (var texture in objectTextures)
-    {
-      if (!string.IsNullOrWhiteSpace(texture?.ToString()))
-        count++;
-    }
-  }
-
-  return count;
-}
-
-static IEnumerable<(string model, string texture)> ExtractModelTextureIds(
-  IEnumerable<object> entities,
-  IEnumerable<object> items
-)
+static IEnumerable<(string model, string texture)> ExtractModelTextureIds()
 {
   var seen = new HashSet<(string, string)>(ValueTupleComparer.Default);
 
   // Extract from entities
-  foreach (var entity in entities)
-  {
-    if (entity is not IDictionary<string, object?> entityData)
-      continue;
+  foreach (var entity in EntityParser.entries.Values)
+    if (!string.IsNullOrWhiteSpace(entity.Model) && !string.IsNullOrWhiteSpace(entity.Texture))
+      yield return (entity.Model, entity.Texture);
 
-    var texture = entityData.TryGetValue("texture", out var textureValue) ? textureValue?.ToString() : null;
+  // Extract from items
+  foreach (var item in ItemParser.entries.Values)
+    if (!string.IsNullOrWhiteSpace(item.Model) && !string.IsNullOrWhiteSpace(item.Texture))
+      yield return (item.Model, item.Texture);
 
-    IEnumerable<string?> models;
-    if (entityData.TryGetValue("model", out var modelValue) && modelValue is string[] modelArray)
-      models = modelArray;
-    else
-      models = [entityData.TryGetValue("model", out var mv) ? mv?.ToString() : null];
-
-    foreach (var model in models)
-    {
-      if (!string.IsNullOrWhiteSpace(model) || !string.IsNullOrWhiteSpace(texture))
-      {
-        var m = !string.IsNullOrWhiteSpace(model) ? model : texture;
-        var t = !string.IsNullOrWhiteSpace(texture) ? texture : model;
-        if (!string.IsNullOrWhiteSpace(m) && !string.IsNullOrWhiteSpace(t) && seen.Add((m!, t!)))
-          yield return (m!, t!);
-      }
-    }
-  }
-
-  // Extract from items (model and texture)
-  foreach (var item in items)
-  {
-    if (item is not IDictionary<string, object?> itemData)
-      continue;
-
-    var itemModel = itemData.TryGetValue("model", out var modelValue) ? modelValue?.ToString() : null;
-    var itemTexture = itemData.TryGetValue("texture", out var textureValue) ? textureValue?.ToString() : null;
-
-    if (!string.IsNullOrWhiteSpace(itemModel) || !string.IsNullOrWhiteSpace(itemTexture))
-    {
-      var m = !string.IsNullOrWhiteSpace(itemModel) ? itemModel : itemTexture;
-      var t = !string.IsNullOrWhiteSpace(itemTexture) ? itemTexture : itemModel;
-      if (!string.IsNullOrWhiteSpace(m) && !string.IsNullOrWhiteSpace(t) && seen.Add((m!, t!)))
-        yield return (m!, t!);
-    }
-  }
+  // Extract from item projectiles
+  foreach (var item in ItemParser.entries.Values)
+    if (!string.IsNullOrWhiteSpace(item.ProjectileModel) && !string.IsNullOrWhiteSpace(item.ProjectileTexture))
+      yield return (item.ProjectileModel, item.ProjectileTexture);
 }
 
 static (int models, int textures) CopyEntityModelsAndTextures(

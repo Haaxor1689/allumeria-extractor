@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AllumeriaInstallDir Condition="'$(ALLUMERIA_INSTALL_DIR)' != ''">$([System.IO.Path]::GetFullPath('$(ALLUMERIA_INSTALL_DIR)'))</AllumeriaInstallDir>
+    <AllumeriaInstallDir Condition="'$(AllumeriaInstallDir)' == ''">$([System.IO.Path]::GetFullPath('C:\Program Files (x86)\Steam\steamapps\common\Allumeria Demo'))</AllumeriaInstallDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Allumeria">
+      <HintPath>$(AllumeriaInstallDir)\Allumeria.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Mathematics">
+      <HintPath>$(AllumeriaInstallDir)\OpenTK.Mathematics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Common">
+      <HintPath>$(AllumeriaInstallDir)\OpenTK.Windowing.Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Desktop">
+      <HintPath>$(AllumeriaInstallDir)\OpenTK.Windowing.Desktop.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework">
+      <HintPath>$(AllumeriaInstallDir)\OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Graphics">
+      <HintPath>$(AllumeriaInstallDir)\OpenTK.Graphics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Audio.OpenAL">
+      <HintPath>$(AllumeriaInstallDir)\OpenTK.Audio.OpenAL.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Facepunch.Steamworks">
+      <HintPath>$(AllumeriaInstallDir)\Facepunch.Steamworks.Win64.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+</Project>

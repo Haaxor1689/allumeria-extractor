@@ -4,6 +4,11 @@ using System.Text.Json;
 
 internal static class ExporterUtils
 {
+  private static JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+  {
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+  };
+
   public static void NormalizeMissingSprites(IEnumerable<object> entries, string sourceDirectory, string fallbackSprite)
   {
     if (!Directory.Exists(sourceDirectory))
@@ -45,17 +50,13 @@ internal static class ExporterUtils
     Console.WriteLine($"  - {label}: {stopwatch.Elapsed.TotalMilliseconds:F0} ms");
   }
 
-  public static void WriteJson<T>(string path, T payload, JsonSerializerOptions jsonOptions)
+  public static void WriteJson<T>(string path, T payload)
   {
     var json = JsonSerializer.Serialize(payload, jsonOptions);
     File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
   }
 
-  public static int? ParseTranslationsToJson(
-    string sourcePath,
-    string destinationPath,
-    JsonSerializerOptions jsonOptions
-  )
+  public static int? ParseTranslationsToJson(string sourcePath, string destinationPath)
   {
     if (!File.Exists(sourcePath))
       return null;
@@ -70,7 +71,7 @@ internal static class ExporterUtils
       translations[key] = value;
     }
 
-    WriteJson(destinationPath, translations, jsonOptions);
+    WriteJson(destinationPath, translations);
     return translations.Count;
   }
 
