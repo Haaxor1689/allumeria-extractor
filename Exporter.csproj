@@ -9,7 +9,7 @@
 
   <PropertyGroup>
     <AllumeriaInstallDir Condition="'$(ALLUMERIA_INSTALL_DIR)' != ''">$([System.IO.Path]::GetFullPath('$(ALLUMERIA_INSTALL_DIR)'))</AllumeriaInstallDir>
-    <AllumeriaInstallDir Condition="'$(AllumeriaInstallDir)' == ''">$([System.IO.Path]::GetFullPath('C:\Program Files (x86)\Steam\steamapps\common\Allumeria Demo'))</AllumeriaInstallDir>
+    <AllumeriaInstallDir Condition="'$(AllumeriaInstallDir)' == ''">$([System.IO.Path]::GetFullPath('C:\Program Files (x86)\Steam\steamapps\common\Allumeria'))</AllumeriaInstallDir>
   </PropertyGroup>
 
   <ItemGroup>

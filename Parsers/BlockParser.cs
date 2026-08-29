@@ -68,11 +68,8 @@ internal class BlockEntry : Dictionary<string, object?>
         .Where(t => t != null)
         .ToArray();
 
-    if (block is BlockCraftingStation)
-    {
-      if (Reflection.GetPrivate<CraftingStation>(block, "craftingStation", out var craftingStationEntry))
-        this["craftingStation"] = craftingStationEntry.strID;
-    }
+    if (block is BlockCraftingStation blockCraftingStation)
+      this["craftingStation"] = blockCraftingStation.craftingStation.strID;
 
     BlockModelParser.entries.TryGetValue(block.model, out var blockModelEntry);
     if (blockModelEntry != null)

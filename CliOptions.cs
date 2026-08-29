@@ -6,7 +6,7 @@ internal sealed record CliOptions(string AssetsDirectory, string OutputAssetsDir
   {
     var allumeriaInstallDir = Environment.GetEnvironmentVariable(AllumeriaInstallDirEnvVar);
     if (string.IsNullOrEmpty(allumeriaInstallDir))
-      allumeriaInstallDir = Path.GetFullPath("C:\\Program Files (x86)\\Steam\\steamapps\\common\\Allumeria Demo");
+      allumeriaInstallDir = Path.GetFullPath("C:\\Program Files (x86)\\Steam\\steamapps\\common\\Allumeria");
 
     var outputAssetsDirectory = Path.Combine(Directory.GetCurrentDirectory(), "export", "assets");
     var outputDataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "export", "data");
