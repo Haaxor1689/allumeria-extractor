@@ -82,6 +82,16 @@ var blocks = ExporterUtils.RunWithProgress(
   () => BlockParser.Parse(),
   result => $"{result.Count} blocks"
 );
+var comfortRequirements = ExporterUtils.RunWithProgress(
+  "Parsing comfort requirements",
+  () => ComfortRequirementParser.Parse(),
+  result => $"{result.Count} records"
+);
+var npcData = ExporterUtils.RunWithProgress(
+  "Parsing NPC data",
+  () => NPCDataParser.Parse(),
+  result => $"{result.Count} records"
+);
 
 Console.WriteLine("[3/5] Exporting textures...");
 var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height, string Type)>(StringComparer.Ordinal)
@@ -151,6 +161,7 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["category_natural"] = (85, 336, 6, 6, "icons"),
   ["category_items"] = (101, 336, 6, 6, "icons"),
   ["category_decoration"] = (165, 336, 6, 6, "icons"),
+  ["npc_head"] = (656, 192, 16, 16, "icons"),
 };
 
 foreach (var effect in effects.Values)
@@ -238,6 +249,8 @@ var summary = new
   blockMaterialCount = blockMaterials.Count,
   structureCount = structures.Count,
   blockModelCount = blockModels.Count,
+  comfortRequirementCount = comfortRequirements.Count,
+  npcDataCount = npcData.Count,
 };
 
 Console.WriteLine("[4/5] Parsing and writing translations...");
@@ -307,6 +320,14 @@ ExporterUtils.RunActionWithProgress(
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "block_models.json"), blockModels.Values)
 );
 ExporterUtils.RunActionWithProgress(
+  "Writing comfort_requirements.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "comfort_requirements.json"), comfortRequirements.Values)
+);
+ExporterUtils.RunActionWithProgress(
+  "Writing npc_data.json",
+  () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "npc_data.json"), npcData.Values)
+);
+ExporterUtils.RunActionWithProgress(
   "Writing summary.json",
   () => ExporterUtils.WriteJson(Path.Combine(outputDataRoot, "summary.json"), summary)
 );
@@ -315,7 +336,7 @@ totalStopwatch.Stop();
 
 Console.WriteLine($"Export complete. Wrote JSON files to: {outputDataRoot}");
 Console.WriteLine(
-  $"Items: {items.Count}, Catalogues: {catalogues.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Entities: {entities.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count}"
+  $"Items: {items.Count}, Catalogues: {catalogues.Count}, Recipes: {recipes.Count}, RecipeAliases: {recipeAliases.Count}, Blocks: {blocks.Count}, Entities: {entities.Count}, Loot: {loots.Count}, Spawns: {spawns.Count}, Effects: {effects.Count}, ItemTags: {itemTags.Count}, BlockMaterials: {blockMaterials.Count}, Structures: {structures.Count}, BlockModels: {blockModels.Count} ComfortRequirements: {comfortRequirements.Count}, NPCData: {npcData.Count}"
 );
 Console.WriteLine($"Converted item textures to WEBP: {copiedItemTextures}");
 Console.WriteLine($"Converted block textures to WEBP: {copiedBlockTextures}");

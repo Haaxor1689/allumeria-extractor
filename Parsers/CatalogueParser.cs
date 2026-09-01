@@ -17,6 +17,8 @@ internal class ShopEntryData : Dictionary<string, object?>
 
 internal class CatalogueEntry : Dictionary<string, object?>
 {
+  public string? Id => TryGetValue("id", out var val) ? (string?)val : null;
+
   public CatalogueEntry(string id, Catalogue catalogue)
   {
     this["id"] = id;

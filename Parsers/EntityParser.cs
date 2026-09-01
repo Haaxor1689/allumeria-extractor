@@ -3,6 +3,7 @@ using System.Reflection.Emit;
 using Allumeria.EntitySystem;
 using Allumeria.EntitySystem.Entities;
 using Allumeria.EntitySystem.Entities.Misc;
+using Allumeria.EntitySystem.Entities.NPCs;
 using Allumeria.EntitySystem.Entities.Walkers;
 using OpenTK.Mathematics;
 
@@ -36,6 +37,9 @@ internal class EntityEntry : Dictionary<string, object?>
 
     if (typeof(MinecartEntity).IsAssignableFrom(entity))
       return "vehicle";
+
+    if (typeof(NPCBase).IsAssignableFrom(entity) && entity != typeof(NPCBase))
+      return "npc";
 
     if (typeof(LivingEntity).IsAssignableFrom(entity) && entity != typeof(LivingEntity))
       return "creature";
