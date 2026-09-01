@@ -144,13 +144,13 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["heart_three_quarters"] = (34, 66, 11, 10, "icons"),
   ["heart_full"] = (50, 66, 11, 10, "icons"),
   ["heart_empty"] = (66, 66, 11, 10, "icons"),
-  ["category_blocks"] = (21, 352, 6, 6, "icons"),
-  ["category_tools"] = (37, 352, 6, 6, "icons"),
-  ["category_technical"] = (53, 352, 6, 6, "icons"),
-  ["category_weapons"] = (69, 352, 6, 6, "icons"),
-  ["category_natural"] = (85, 352, 6, 6, "icons"),
-  ["category_items"] = (101, 352, 6, 6, "icons"),
-  ["category_decoration"] = (165, 352, 6, 6, "icons"),
+  ["category_blocks"] = (21, 336, 6, 6, "icons"),
+  ["category_tools"] = (37, 336, 6, 6, "icons"),
+  ["category_technical"] = (53, 336, 6, 6, "icons"),
+  ["category_weapons"] = (69, 336, 6, 6, "icons"),
+  ["category_natural"] = (85, 336, 6, 6, "icons"),
+  ["category_items"] = (101, 336, 6, 6, "icons"),
+  ["category_decoration"] = (165, 336, 6, 6, "icons"),
 };
 
 foreach (var effect in effects.Values)
