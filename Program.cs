@@ -162,6 +162,15 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["category_items"] = (101, 336, 6, 6, "icons"),
   ["category_decoration"] = (165, 336, 6, 6, "icons"),
   ["npc_head"] = (656, 192, 16, 16, "icons"),
+  ["icon_cross"] = (16, 240, 11, 11, "icons"),
+  ["icon_favourite"] = (64, 240, 11, 11, "icons"),
+  ["icon_bin"] = (80, 240, 11, 11, "icons"),
+  ["icon_menu"] = (96, 240, 11, 11, "icons"),
+  ["icon_plus"] = (112, 240, 11, 11, "icons"),
+  ["icon_minus"] = (128, 240, 11, 11, "icons"),
+  ["icon_up"] = (144, 240, 11, 11, "icons"),
+  ["icon_down"] = (160, 240, 11, 11, "icons"),
+  ["icon_cloud"] = (176, 240, 11, 11, "icons"),
 };
 
 foreach (var effect in effects.Values)
