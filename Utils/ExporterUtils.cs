@@ -67,6 +67,11 @@ internal static class ExporterUtils
     {
       if (!TryParseTranslationLine(line, out var key, out var value))
         continue;
+      if (translations.ContainsKey(key))
+      {
+        Console.WriteLine($"[!] Duplicate key: {key}");
+        continue;
+      }
 
       translations[key] = value;
     }
