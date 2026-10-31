@@ -123,6 +123,7 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["dialog_rarity_3"] = (48, 96, 16, 16, "ui"),
   ["dialog_rarity_4"] = (64, 96, 16, 16, "ui"),
   ["dialog_rarity_5"] = (80, 96, 16, 16, "ui"),
+  ["dialog_rarity_6"] = (96, 96, 16, 16, "ui"),
   ["dialog_positive"] = (112, 96, 16, 16, "ui"),
   ["dialog"] = (128, 96, 16, 16, "ui"),
   ["dialog_negative"] = (144, 96, 16, 16, "ui"),
