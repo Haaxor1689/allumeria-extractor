@@ -163,6 +163,7 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["category_items"] = (101, 336, 6, 6, "icons"),
   ["category_decoration"] = (165, 336, 6, 6, "icons"),
   ["npc_head"] = (656, 192, 16, 16, "icons"),
+  ["screen"] = (576, 96, 16, 16, "icons"),
   ["icon_cross"] = (16, 240, 11, 11, "icons"),
   ["icon_favourite"] = (64, 240, 11, 11, "icons"),
   ["icon_bin"] = (80, 240, 11, 11, "icons"),
