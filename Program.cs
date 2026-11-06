@@ -134,6 +134,7 @@ var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height
   ["input_active"] = (368, 16, 16, 16, "ui"),
   ["scroll_thumb"] = (96, 16, 16, 16, "ui"),
   ["scroll_track"] = (112, 16, 16, 16, "ui"),
+  ["option_entry"] = (384, 16, 16, 16, "ui"),
   ["slot"] = (191, 47, 18, 18, "ui"),
   ["slot_hover"] = (223, 47, 18, 18, "ui"),
   ["slot_favourite"] = (255, 95, 18, 18, "icons"),

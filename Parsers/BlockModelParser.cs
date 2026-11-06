@@ -89,10 +89,14 @@ internal class BlockModelEntry : Dictionary<string, object?>
   )
   {
     this["id"] = id;
-    this["cuboids"] = cuboids.ToArray();
+
+    if (cuboids.Any())
+      this["cuboids"] = cuboids.ToArray();
+
     var colliderData = colliders.Select(collider => new ColliderData(collider)).ToArray();
     if (colliderData.Length > 0)
       this["colliders"] = colliderData;
+
     var quadData = quads.Select(quad => new QuadMeshData(quad)).OrderBy(quad => quad.Flag).ToArray();
     if (quadData.Length > 0)
       this["quads"] = quadData;
