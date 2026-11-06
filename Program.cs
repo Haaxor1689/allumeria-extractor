@@ -93,6 +93,8 @@ var npcData = ExporterUtils.RunWithProgress(
   result => $"{result.Count} records"
 );
 
+BlockModelParser.Cleanup();
+
 Console.WriteLine("[3/5] Exporting textures...");
 var uiTextureAtlas = new Dictionary<string, (int X, int Y, int Width, int Height, string Type)>(StringComparer.Ordinal)
 {
