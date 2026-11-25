@@ -19,8 +19,18 @@ internal class CuboidMeshData : Dictionary<string, object?>
     // byte[] would be serialized as base64 rather than face indices.
     if (cuboid.textureIndices.Any(index => index != 0))
       this["textureIndices"] = cuboid.textureIndices.Select(index => (int)index).ToArray();
-    if (cuboid.useOffsets)
-      this["uvOffsets"] = cuboid.uvOffsets.Select(offset => new[] { offset.X, offset.Y }).ToArray();
+
+    // Bake the uvBounds into the uvOffsets for non-default bounds.
+    if (cuboid.useOffsets || boundsX != 16 || boundsZ != 16)
+    {
+      var uvOffsets = cuboid.useOffsets
+        ? cuboid.uvOffsets.Select(offset => new[] { offset.X, offset.Y }).ToArray()
+        : Enumerable.Range(0, 6).Select(_ => new int[2]).ToArray();
+      uvOffsets[0][0] += 16 - boundsX;
+      uvOffsets[2][0] += 16 - boundsZ;
+      uvOffsets[5][0] += 16 - boundsX;
+      this["uvOffsets"] = uvOffsets;
+    }
     if (!cuboid.useAO)
       this["useAO"] = false;
     if (cuboid.flag != 0)
@@ -31,8 +41,6 @@ internal class CuboidMeshData : Dictionary<string, object?>
       this["noNormals"] = true;
     if (inverted)
       this["inverted"] = true;
-    if (boundsX != 16 || boundsY != 16 || boundsZ != 16)
-      this["uvBounds"] = new[] { boundsX, boundsY, boundsZ };
     if (matrix != default)
       this["transform"] = new[]
       {
@@ -128,7 +136,7 @@ internal static class BlockModelParser
       entries[model] = new BlockModelEntry(
         id,
         captured.Cuboids,
-        model.quads.Where((_, index) => !captured.CuboidQuadIndices.Contains(index)),
+        model.quads.Where((_, index) => !captured.GeneratedQuadIndices.Contains(index)),
         model.colliders
       );
     }

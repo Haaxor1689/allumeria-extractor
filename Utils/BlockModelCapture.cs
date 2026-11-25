@@ -8,8 +8,30 @@ internal sealed class BlockModelCapture
   internal sealed class ModelData
   {
     public List<CuboidMeshData> Cuboids { get; } = [];
-    public HashSet<int> CuboidQuadIndices { get; } = [];
+
+    // Quads the game derives from builder calls (cuboid faces, AddQuad back faces) rather than authored directly.
+    public HashSet<int> GeneratedQuadIndices { get; } = [];
   }
+
+  private static readonly Type[] CuboidBuilderSignature =
+  [
+    typeof(Cuboid),
+    typeof(Matrix4),
+    typeof(int),
+    typeof(int),
+    typeof(int),
+  ];
+
+  private static readonly Type[] QuadBuilderSignature =
+  [
+    typeof(Vector3[]),
+    typeof(FaceUV),
+    typeof(byte),
+    typeof(Matrix4),
+    typeof(int),
+    typeof(byte),
+    typeof(bool),
+  ];
 
   private readonly Dictionary<BlockModelQuads, ModelData> models = [];
   private readonly Dictionary<string, BlockModelQuads> fields = [];
@@ -38,6 +60,7 @@ internal sealed class BlockModelCapture
       nameof(AddCuboid),
       BindingFlags.Static | BindingFlags.NonPublic
     )!;
+    var captureQuad = typeof(BlockModelCapture).GetMethod(nameof(AddQuad), BindingFlags.Static | BindingFlags.NonPublic)!;
     var captureField = typeof(BlockModelCapture).GetMethod(
       nameof(StoreModel),
       BindingFlags.Static | BindingFlags.NonPublic
@@ -73,25 +96,31 @@ internal sealed class BlockModelCapture
       if (op == OpCodes.Stsfld || op == OpCodes.Ldsflda)
         throw new NotSupportedException($"Cannot replay external static field access: {operand}.");
 
-      if (
-        (op == OpCodes.Call || op == OpCodes.Callvirt)
-        && operand is MethodInfo method
-        && method.DeclaringType == type
-        && method.Name is nameof(BlockModelQuads.AddCuboid) or nameof(BlockModelQuads.AddInvertedCuboid)
-      )
+      if ((op == OpCodes.Call || op == OpCodes.Callvirt) && operand is MethodInfo method && method.DeclaringType == type)
       {
-        if (
-          !method
-            .GetParameters()
-            .Select(parameter => parameter.ParameterType)
-            .SequenceEqual(new[] { typeof(Cuboid), typeof(Matrix4), typeof(int), typeof(int), typeof(int) })
-        )
-          throw new NotSupportedException($"Unsupported cuboid builder signature: {method}.");
+        var parameters = method.GetParameters().Select(parameter => parameter.ParameterType).ToArray();
 
-        il.Emit(OpCodes.Ldarg_0);
-        il.Emit(method.Name == nameof(BlockModelQuads.AddInvertedCuboid) ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
-        il.Emit(OpCodes.Call, captureCuboid);
-        continue;
+        if (method.Name is nameof(BlockModelQuads.AddCuboid) or nameof(BlockModelQuads.AddInvertedCuboid))
+        {
+          if (!parameters.SequenceEqual(CuboidBuilderSignature))
+            throw new NotSupportedException($"Unsupported cuboid builder signature: {method}.");
+
+          il.Emit(OpCodes.Ldarg_0);
+          il.Emit(method.Name == nameof(BlockModelQuads.AddInvertedCuboid) ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
+          il.Emit(OpCodes.Call, captureCuboid);
+          continue;
+        }
+
+        // The BlockQuad overload adds a single quad, so only the vertex overload needs capturing.
+        if (method.Name == nameof(BlockModelQuads.AddQuad) && parameters.FirstOrDefault() == typeof(Vector3[]))
+        {
+          if (!parameters.SequenceEqual(QuadBuilderSignature))
+            throw new NotSupportedException($"Unsupported quad builder signature: {method}.");
+
+          il.Emit(OpCodes.Ldarg_0);
+          il.Emit(OpCodes.Call, captureQuad);
+          continue;
+        }
       }
 
       Emit(il, instruction, labels);
@@ -132,7 +161,29 @@ internal sealed class BlockModelCapture
       model.AddCuboid(cuboid, matrix, boundsX, boundsY, boundsZ);
 
     for (var index = start; index < model.quads.Count; index++)
-      data.CuboidQuadIndices.Add(index);
+      data.GeneratedQuadIndices.Add(index);
+    return model;
+  }
+
+  private static BlockModelQuads AddQuad(
+    BlockModelQuads model,
+    Vector3[] verts,
+    FaceUV faceTexture,
+    byte normal,
+    Matrix4 matrix,
+    int flag,
+    byte textureIndex,
+    bool ignorePaint,
+    BlockModelCapture capture
+  )
+  {
+    var data = capture.GetModel(model);
+    var start = model.quads.Count;
+    model.AddQuad(verts, faceTexture, normal, matrix, flag, textureIndex, ignorePaint);
+
+    // The game appends a reversed-winding back face after the authored quad.
+    for (var index = start + 1; index < model.quads.Count; index++)
+      data.GeneratedQuadIndices.Add(index);
     return model;
   }
 
