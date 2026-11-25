@@ -52,7 +52,11 @@ internal class BlockEntry : Dictionary<string, object?>
       this["textures"] = block
         .textureStrings.Select(t =>
         {
-          if ((Class == "ToggleLamp" && Id != "logic_pixel") || Class == "Pumpkin")
+          if (
+            (Class == "ToggleLamp" && Id != "logic_pixel")
+            || Class == "Pumpkin"
+            || Id == "sand_dungeon_spawner"
+          )
           {
             if (t.EndsWith("_off"))
               return null;
